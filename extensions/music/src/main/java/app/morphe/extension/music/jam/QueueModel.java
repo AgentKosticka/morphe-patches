@@ -8,7 +8,7 @@ public final class QueueModel {
     private static byte[] text(int number,String value){return field(number,value.getBytes(StandardCharsets.UTF_8));}
     private static void number(ByteArrayOutputStream out,long value){while((value&~127L)!=0){out.write((int)value&127|128);value>>>=7;}out.write((int)value);}
     private static byte[] concat(byte[]... values){ByteArrayOutputStream out=new ByteArrayOutputStream();for(byte[] value:values)out.write(value,0,value.length);return out.toByteArray();}
-    private static byte[] label(String value){return field(1,text(1,value));}
+    private static byte[] label(String value){return text(4,value);}
     public static byte[] encode(String video,String title,String artist){
         return encode(video,title,artist,"");
     }
@@ -20,7 +20,7 @@ public final class QueueModel {
     }
     public static byte[] encode(String video,String title,String artist,String picture){
         if(!video.matches("[A-Za-z0-9_-]{11}"))throw new IllegalArgumentException("Invalid video ID");
-        // bxxt.renderer -> bzba.musicResponsiveListItemRenderer (51779701).
+        // bxxt.renderer -> bzba.musicResponsiveListItemRenderer (51779701); bqph.text is field 4.
         byte[] watch=field(48687757,text(1,video));
         byte[] thumbnail=field(1,text(1,thumbnail(picture,video)));
         byte[] renderer=concat(field(1,label(title)),field(2,label(artist)),field(12,label(artist)),field(3,thumbnail),field(7,watch),text(10,video));

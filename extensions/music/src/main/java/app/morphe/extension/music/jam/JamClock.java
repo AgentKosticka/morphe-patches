@@ -22,6 +22,54 @@ public final class JamClock {
     private static final String generation=UUID.randomUUID().toString();
     private static long serial;
     public static void capture(MediaSession session){controller=session.getController();}
+    /** YTM's MediaSession resolves this persistent ID in both native queue lanes. */
+    static void playHost(long itemId) throws Exception {
+        MediaController current = controller;
+        if (current == null) throw new IllegalStateException("Open the host player first");
+        PlaybackState state = current.getPlaybackState();
+        if (state == null) throw new IllegalStateException("Host player is not ready");
+        MediaController.TransportControls controls = current.getTransportControls();
+        CompletableFuture<Void> playing = new CompletableFuture<>();
+        Runnable confirm = new Runnable() {
+            private boolean resumed;
+
+            @Override public void run() {
+                if (playing.isDone()) return;
+                if (controller != current) {
+                    playing.completeExceptionally(new IllegalStateException("Host player changed; retry"));
+                    return;
+                }
+                try {
+                    PlaybackState next = current.getPlaybackState();
+                    if (next != null && next.getActiveQueueItemId() == itemId) {
+                        if (next.getState() == PlaybackState.STATE_PLAYING) {
+                            playing.complete(null);
+                            return;
+                        }
+                        if (!resumed && next.getState() == PlaybackState.STATE_PAUSED) {
+                            resumed = true;
+                            controls.play();
+                        }
+                    }
+                    JamUi.main.postDelayed(this, 100);
+                } catch (Exception error) {
+                    playing.completeExceptionally(error);
+                }
+            }
+        };
+        // Never fall back to an enqueue endpoint. Wait off the native queue
+        // executor so selection and MediaSession publication can finish.
+        if (state.getActiveQueueItemId() != itemId) controls.skipToQueueItem(itemId);
+        JamUi.main.post(confirm);
+        try {
+            playing.get(8, TimeUnit.SECONDS);
+        } catch (TimeoutException error) {
+            throw new IllegalStateException("Host did not confirm playback; check the host player");
+        } finally {
+            playing.cancel(false);
+            JamUi.main.removeCallbacks(confirm);
+        }
+    }
     static JSONObject snapshot()throws Exception{
         MediaController c=controller;JSONObject out=new JSONObject().put("generation",generation).put("sequence",++serial).put("sampledAt",SystemClock.elapsedRealtime()).put("videoId",VideoInformation.getVideoId());
         if(c==null)return out;

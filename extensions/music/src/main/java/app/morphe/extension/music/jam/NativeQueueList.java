@@ -9,7 +9,7 @@ public final class NativeQueueList extends AbstractList<Object> {
     public synchronized List<Object> subList(int from,int to){return new ArrayList<>(items.subList(from,to));}
     public synchronized void replace(List<Object> next){items.clear();items.addAll(next);}
     @Override public Object remove(int index){Object item=get(index);JamMirror.remove(item);return item;}
-    public void j(int from,int to){JamMirror.move(this,from,to);}
+    public void move(int from,int to){JamMirror.move(this,from,to);}
     public void addListener(Object listener){}
     public void removeListener(Object listener){}
 }

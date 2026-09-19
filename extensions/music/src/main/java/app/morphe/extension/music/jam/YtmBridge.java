@@ -8,17 +8,16 @@ public final class YtmBridge {
     public interface QueueAccess {
         void patch_jamEnqueue(byte[] command);
         Executor patch_jamExecutor();
-        default Object[] patch_jamItems() { throw new UnsupportedOperationException(); }
+        default Object[] patch_jamItems() { return patch_jamLaneItems(0); }
+        default Object[] patch_jamLaneItems(int lane) { throw new UnsupportedOperationException(); }
         default String patch_jamVideoId(Object item) { throw new UnsupportedOperationException(); }
         default String patch_jamTitle(Object item) { throw new UnsupportedOperationException(); }
         default long patch_jamItemId(Object item) { throw new UnsupportedOperationException(); }
         default int patch_jamCurrent() { throw new UnsupportedOperationException(); }
         default boolean patch_jamLocal() { throw new UnsupportedOperationException(); }
-        default void patch_jamRemove(int index) { throw new UnsupportedOperationException(); }
-        default void patch_jamMove(int from, int to) { throw new UnsupportedOperationException(); }
+        default void patch_jamRemove(int index) { patch_jamRemoveFrom(0, index); }
+        default void patch_jamMove(int from, int to) { patch_jamMoveFrom(0, from, to); }
         default String patch_jamArtist(Object item) { return ""; }
-        default String patch_jamThumbnail(Object item) { return ""; }
-        default byte[] patch_jamWatchItem(Object item) { throw new UnsupportedOperationException(); }
         default java.util.concurrent.Future<?> patch_jamRequestMenu(byte[] command) { throw new UnsupportedOperationException(); }
         default Object[] patch_jamMenuItems(Object response) { throw new UnsupportedOperationException(); }
         default Object patch_jamCreateItem(byte[] data,long id) { throw new UnsupportedOperationException(); }
@@ -26,12 +25,46 @@ public final class YtmBridge {
         default void patch_jamDisplayedList(Object list) { throw new UnsupportedOperationException(); }
         default void patch_jamRefreshDisplay() { throw new UnsupportedOperationException(); }
         default void patch_jamViewThread(Runnable task) { throw new UnsupportedOperationException(); }
-        default Object[] patch_jamAutoplayItems() { throw new UnsupportedOperationException(); }
+        default Object[] patch_jamAutoplayItems() { return patch_jamLaneItems(1); }
         default Object patch_jamDisplayedAutoplay() { throw new UnsupportedOperationException(); }
         default void patch_jamDisplayedAutoplay(Object list) { throw new UnsupportedOperationException(); }
         default void patch_jamRefreshAutoplay() { throw new UnsupportedOperationException(); }
-        default void patch_jamRemoveFrom(int lane,int index) { throw new UnsupportedOperationException(); }
-        default void patch_jamMoveFrom(int lane,int from,int to) { throw new UnsupportedOperationException(); }
+        default void patch_jamRemoveItem(Object item) { throw new UnsupportedOperationException(); }
+        default void patch_jamMoveLane(int lane, int from, int to) { throw new UnsupportedOperationException(); }
+        default void patch_jamNotifyMove(Object item, Object predecessor) { throw new UnsupportedOperationException(); }
+        default void patch_jamRemoveFrom(int lane, int index) {
+            checkLane(lane);
+            patch_jamRemoveItem(patch_jamLaneItems(lane)[index]);
+        }
+        default void patch_jamMoveFrom(int lane, int from, int to) {
+            checkLane(lane);
+            int size = patch_jamLaneItems(lane).length;
+            if (from < 0 || to < 0 || from >= size || to >= size) {
+                throw new IndexOutOfBoundsException("Queue changed; retry the move");
+            }
+            if (from == to) return;
+            patch_jamMoveLane(lane, from, to);
+            Object[] reordered = patch_jamLaneItems(lane);
+            patch_jamNotifyMove(reordered[to], to == 0 ? null : reordered[to - 1]);
+        }
+    }
+
+    private static void checkLane(int lane) {
+        if (lane != 0 && lane != 1) throw new IllegalArgumentException("Invalid queue lane");
+    }
+
+    /** Stable projections added to concrete native queue-item implementations. */
+    public interface ItemAccess {
+        Object patch_jamArtwork();
+        Object patch_jamMenuPayload();
+    }
+
+    public interface ArtworkAccess {
+        Object[] patch_jamThumbnailEntries();
+    }
+
+    public interface ThumbnailAccess {
+        String patch_jamThumbnailUrl();
     }
 
     public interface DispatchCallback {
@@ -46,6 +79,21 @@ public final class YtmBridge {
         QueueAccess access=queue.get();
         if(access==null) throw new IllegalStateException("Start a song in YouTube Music first");
         return access;
+    }
+
+    static String thumbnail(Object item) {
+        if (!(item instanceof ItemAccess)) return "";
+        Object artwork = ((ItemAccess) item).patch_jamArtwork();
+        if (!(artwork instanceof ArtworkAccess)) return "";
+        Object[] entries = ((ArtworkAccess) artwork).patch_jamThumbnailEntries();
+        if (entries == null) return "";
+        for (int index = entries.length - 1; index >= 0; index--) {
+            Object entry = entries[index];
+            if (!(entry instanceof ThumbnailAccess)) continue;
+            String url = ((ThumbnailAccess) entry).patch_jamThumbnailUrl();
+            if (url != null && !url.isEmpty()) return url;
+        }
+        return "";
     }
 
     // Called only after the native operations-manager constructor finishes.

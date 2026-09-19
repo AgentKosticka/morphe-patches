@@ -18,7 +18,7 @@ final class JamPanel {
         if(JamUi.pending>0)return "Updating Jam…";
         if("Joining".equals(r))return "Finding your host on Wi-Fi…";
         if("Host".equals(r)){int n=s.optInt("peers");return (n==0?"Waiting for people":n+" "+(n==1?"person":"people")+" connected")+" · "+(s.optBoolean("allowGuestEdits",true)?"Edits open":"Edits locked");}
-        if("Participant".equals(r)){String t=s.optString("transport");return "Aware".equals(t)?"Connected via Wi-Fi Aware":"LAN".equals(t)?"Connected via Wi-Fi":"Reconnecting to your host…";}
+        if("Participant".equals(r)){if(view.has("error"))return view.optString("error");String t=s.optString("transport");return "Aware".equals(t)?"Connected via Wi-Fi Aware":"LAN".equals(t)?"Connected via Wi-Fi":"Reconnecting to your host…";}
         return s==null&&view.has("error")?view.optString("error"):"Share a queue. Let everyone add songs.";
     }
     static boolean waiting(JSONObject v){String r=role(v);JSONObject s=v.optJSONObject("session");return JamUi.pending>0||"Joining".equals(r)||("Participant".equals(r)&&!"Aware".equals(s.optString("transport"))&&!"LAN".equals(s.optString("transport")));}

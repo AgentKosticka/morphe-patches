@@ -16,7 +16,7 @@ public final class JamBridgeService extends Service {
     private static long revision;
     private final IJamBridge.Stub binder=new IJamBridge.Stub(){
         public String call(String capability,String request){
-            Trust.caller(JamBridgeService.this,Trust.COMPANION,Trust.COMPANION_CERT);
+            Trust.caller(JamBridgeService.this,getSharedPreferences("jam",0).getString("companionPackage",Trust.COMPANION));
             Trust.capability(getSharedPreferences("jam",0).getString("cap",null),capability);
             if(request==null||request.length()>32768)throw new IllegalArgumentException("Request size");
             synchronized(LOCK){try{return execute(new JSONObject(request)).toString();}catch(Exception e){return error(e.getMessage()).toString();}}
@@ -37,7 +37,7 @@ public final class JamBridgeService extends Service {
         for(int i=0;i<items.length;i++){Object item=items[i];String id=Long.toString(a.patch_jamItemId(item));String video=a.patch_jamVideoId(item);String title=a.patch_jamTitle(item);
             String artist=a.patch_jamArtist(item);
             rows.put(new JSONObject().put("id",id).put("videoId",video).put("title",title==null?video:title.substring(0,Math.min(title.length(),200))).put("artist",artist==null?"":artist.substring(0,Math.min(artist.length(),200))).put("current",i==current));key.append(id).append(':').append(video).append(';');}
-        if(current>=0&&current<items.length)rows.getJSONObject(current).put("thumbnail",QueueModel.thumbnail(a.patch_jamThumbnail(items[current]),a.patch_jamVideoId(items[current])));
+        if(current>=0&&current<items.length)rows.getJSONObject(current).put("thumbnail",QueueModel.thumbnail(YtmBridge.thumbnail(items[current]),a.patch_jamVideoId(items[current])));
         JSONArray suggested=new JSONArray();key.append("|autoplay|");
         for(Object item:autoplay){String id=Long.toString(a.patch_jamItemId(item)),video=a.patch_jamVideoId(item),title=a.patch_jamTitle(item),artist=a.patch_jamArtist(item);
             suggested.put(new JSONObject().put("id",id).put("videoId",video).put("title",title==null?video:title.substring(0,Math.min(title.length(),200))).put("artist",artist==null?"":artist.substring(0,Math.min(artist.length(),200))).put("current",false));key.append(id).append(':').append(video).append(';');}
@@ -56,16 +56,13 @@ public final class JamBridgeService extends Service {
             if("SEEK".equals(op)){JamClock.seekHost(r.getString("videoId"),r.getLong("position"));result=snapshot().put("dispatched",true);
             }else if("PLAY".equals(op)){
                 String video=r.getString("videoId"),itemId=r.getString("item");
-                byte[] endpoint=nativeCall(()->{YtmBridge.QueueAccess a=YtmBridge.access();snapshotOnExecutor(a);
-                    for(Object item:a.patch_jamItems())if(itemId.equals(Long.toString(a.patch_jamItemId(item)))&&video.equals(a.patch_jamVideoId(item)))return a.patch_jamWatchItem(item);
-                    for(Object item:a.patch_jamAutoplayItems())if(itemId.equals(Long.toString(a.patch_jamItemId(item)))&&video.equals(a.patch_jamVideoId(item)))return a.patch_jamWatchItem(item);
-                    throw new IllegalStateException("Track is no longer in the host queue");});
-                JamPlayback.hostWatch(endpoint);result=error("Playback outcome unknown; check the host");
-                long until=System.nanoTime()+TimeUnit.SECONDS.toNanos(10);
-                while(System.nanoTime()<until){Thread.sleep(150);JSONObject s=snapshot();JSONArray rows=s.getJSONArray("items");
-                    for(int i=0;i<rows.length();i++){JSONObject row=rows.getJSONObject(i);if(row.optBoolean("current")&&video.equals(row.optString("videoId")))result=s.put("confirmed",true);}
-                    if(result.optBoolean("ok"))break;
-                }
+                long selectedId=nativeCall(()->{YtmBridge.QueueAccess a=YtmBridge.access();snapshotOnExecutor(a);Object selected=null;
+                    for(Object item:a.patch_jamItems())if(itemId.equals(Long.toString(a.patch_jamItemId(item)))&&video.equals(a.patch_jamVideoId(item))){selected=item;break;}
+                    if(selected==null)for(Object item:a.patch_jamAutoplayItems())if(itemId.equals(Long.toString(a.patch_jamItemId(item)))&&video.equals(a.patch_jamVideoId(item))){selected=item;break;}
+                    if(selected==null)throw new IllegalStateException("Track is no longer in the host queue");
+                    return a.patch_jamItemId(selected);});
+                JamClock.playHost(selectedId);
+                result=snapshot().put("confirmed",true);
             }else if("ADD".equals(op)||"PLAY_NEXT".equals(op)){
                 String video=r.getString("videoId");byte[] command=QueueCommand.encode(video,"PLAY_NEXT".equals(op));
                 JamCompletion.Ticket ticket=nativeCall(()->{YtmBridge.QueueAccess a=YtmBridge.access();snapshotOnExecutor(a);JamCompletion.Ticket pending=JamCompletion.begin();try{a.patch_jamEnqueue(command);return pending;}finally{JamCompletion.end();}});

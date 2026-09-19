@@ -10,13 +10,15 @@ import java.io.*;
 /** Updates the existing native artwork view; caches one bounded public thumbnail. */
 public final class JamArtwork {
     private static final Map<ImageView,Drawable> originals=new WeakHashMap<>();
+    private static final Set<ImageView> views=Collections.newSetFromMap(new WeakHashMap<>());
     private static final ExecutorService loader=Executors.newSingleThreadExecutor();
     private static String url="";
     private static Bitmap picture;
-    public static void bind(ImageView view){if(!JamMirror.active())return;if(!originals.containsKey(view))originals.put(view,view.getDrawable());if(picture!=null)view.setImageBitmap(picture);}
+    private static void retain(ImageView view){if(!originals.containsKey(view))originals.put(view,view.getDrawable());}
+    public static void bind(ImageView view){views.add(view);if(!JamMirror.active())return;retain(view);if(picture!=null)view.setImageBitmap(picture);}
     public static Bitmap choose(ImageView view,Bitmap local){
-        if(!JamMirror.active())return local;
-        originals.put(view,new BitmapDrawable(view.getResources(),local));return picture==null?local:picture;
+        views.add(view);if(!JamMirror.active())return local;
+        retain(view);return picture==null?local:picture;
     }
     static void clear(){url="";picture=null;JamPalette.clear();for(Map.Entry<ImageView,Drawable> entry:new ArrayList<>(originals.entrySet()))entry.getKey().setImageDrawable(entry.getValue());originals.clear();}
     static void update(String value){
@@ -30,7 +32,7 @@ public final class JamArtwork {
             if(options.outWidth<=0||options.outHeight<=0||options.outWidth>8192||options.outHeight>8192)return;
             options.inJustDecodeBounds=false;options.inSampleSize=Math.max(1,Math.max(options.outWidth,options.outHeight)/1024);
             Bitmap result=BitmapFactory.decodeByteArray(bytes,0,bytes.length,options);
-            JamUi.main.post(()->{if(!value.equals(url)||!JamMirror.active())return;picture=result;JamPalette.update(result);for(ImageView view:new ArrayList<>(originals.keySet()))if(result!=null)view.setImageBitmap(result);});
+            JamUi.main.post(()->{if(!value.equals(url)||!JamMirror.active())return;picture=result;JamPalette.update(result);for(ImageView view:new ArrayList<>(views)){retain(view);if(result!=null)view.setImageBitmap(result);}});
         }catch(Exception e){android.util.Log.i("MorpheJam","Host artwork unavailable");}});
     }
 }
