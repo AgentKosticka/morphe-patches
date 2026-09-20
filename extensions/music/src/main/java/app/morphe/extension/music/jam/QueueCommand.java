@@ -3,27 +3,54 @@ package app.morphe.extension.music.jam;
 import java.io.ByteArrayOutputStream;
 import java.nio.charset.StandardCharsets;
 
-/** Minimal native queue endpoint, verified against the 9.15.51 protobuf schema. */
+/**
+ * Minimal protobuf adapter for the native YT Music queue endpoints used by Jam.
+ *
+ * <p>The large values below are protobuf extension field numbers from the
+ * YT Music 9.15.51 InnerTube wire schema, not obfuscated Java identifiers.  The adapter keeps
+ * the wire surface deliberately small: it reads/writes only the fields Jam
+ * needs and rejects duplicate, unexpected-wire-type, or malformed fields.
+ */
 public final class QueueCommand {
+    /** NavigationEndpoint.watchEndpoint extension field in the 9.15.51 wire schema. */
+    private static final int WATCH_ENDPOINT_FIELD = 48_687_757;
+
+    /**
+     * Queue mutation endpoint extension observed in YT Music 9.15.51.
+     *
+     * <pre>
+     * endpoint[QUEUE_EDIT_ENDPOINT_FIELD] {
+     *   target[1] { video_id[1] }
+     *   mode[2] = 1 (play next) | 2 (add to queue)
+     * }
+     * </pre>
+     */
+    private static final int QUEUE_EDIT_ENDPOINT_FIELD = 163_162_354;
+    private static final int VIDEO_ID_FIELD = 1;
+    private static final int QUEUE_EDIT_TARGET_FIELD = 1;
+    private static final int QUEUE_EDIT_MODE_FIELD = 2;
+    private static final int MODE_PLAY_NEXT = 1;
+    private static final int MODE_ADD = 2;
+
     private QueueCommand() {}
     public static String watchVideo(byte[] data){try{
         if(data==null||data.length>65536)return null;
-        byte[] video=field(field(data,48687757),1);
+        byte[] video=field(field(data,WATCH_ENDPOINT_FIELD),VIDEO_ID_FIELD);
         String id=new String(video,StandardCharsets.US_ASCII);
         return id.matches("[A-Za-z0-9_-]{11}")?id:null;
     }catch(RuntimeException e){return null;}}
     public static byte[] watch(String video){
         if(video==null||!video.matches("[A-Za-z0-9_-]{11}"))throw new IllegalArgumentException("Invalid video ID");
         ByteArrayOutputStream body=new ByteArrayOutputStream(),endpoint=new ByteArrayOutputStream();
-        bytes(body,1,video.getBytes(StandardCharsets.US_ASCII));bytes(endpoint,48687757,body.toByteArray());return endpoint.toByteArray();
+        bytes(body,VIDEO_ID_FIELD,video.getBytes(StandardCharsets.US_ASCII));bytes(endpoint,WATCH_ENDPOINT_FIELD,body.toByteArray());return endpoint.toByteArray();
     }
     /** Native music/get_queue context used to load the selected track's participant-side options. */
     public static byte[] menuRequest(String video){
         if(video==null||!video.matches("[A-Za-z0-9_-]{11}"))throw new IllegalArgumentException("Invalid video ID");
         ByteArrayOutputStream context=new ByteArrayOutputStream(),request=new ByteArrayOutputStream(),endpoint=new ByteArrayOutputStream();
-        bytes(context,1,video.getBytes(StandardCharsets.US_ASCII));
-        bytes(request,1,context.toByteArray());
-        bytes(endpoint,163162354,request.toByteArray());
+        bytes(context,VIDEO_ID_FIELD,video.getBytes(StandardCharsets.US_ASCII));
+        bytes(request,QUEUE_EDIT_TARGET_FIELD,context.toByteArray());
+        bytes(endpoint,QUEUE_EDIT_ENDPOINT_FIELD,request.toByteArray());
         return endpoint.toByteArray();
     }
 
@@ -31,14 +58,14 @@ public final class QueueCommand {
     public static String[] decode(byte[] data) {
         try {
             if(data==null || data.length>65536)return null;
-            byte[] operation=field(data,163162354);
-            byte[] target=field(operation,1);
-            byte[] video=field(target,1);
+            byte[] operation=field(data,QUEUE_EDIT_ENDPOINT_FIELD);
+            byte[] target=field(operation,QUEUE_EDIT_TARGET_FIELD);
+            byte[] video=field(target,VIDEO_ID_FIELD);
             if(video==null)return null;
             String id=new String(video,StandardCharsets.US_ASCII);
             if(!id.matches("[A-Za-z0-9_-]{11}"))return null;
-            int mode=integer(operation,2);
-            return mode==1||mode==2?new String[]{id,mode==1?"PLAY_NEXT":"ADD"}:null;
+            int mode=integer(operation,QUEUE_EDIT_MODE_FIELD);
+            return mode==MODE_PLAY_NEXT||mode==MODE_ADD?new String[]{id,mode==MODE_PLAY_NEXT?"PLAY_NEXT":"ADD"}:null;
         } catch(RuntimeException malformed){return null;}
     }
     private static long read(byte[] data,int[] at){
@@ -65,14 +92,14 @@ public final class QueueCommand {
             throw new IllegalArgumentException("Enter an 11-character YouTube video ID");
         }
         ByteArrayOutputStream target = new ByteArrayOutputStream();
-        bytes(target, 1, videoId.getBytes(StandardCharsets.US_ASCII));
+        bytes(target, VIDEO_ID_FIELD, videoId.getBytes(StandardCharsets.US_ASCII));
         // Do not set target field 3: that selects the downloaded/local-media route.
         ByteArrayOutputStream operation = new ByteArrayOutputStream();
-        bytes(operation, 1, target.toByteArray());
-        varint(operation, 2 << 3);
-        varint(operation, playNext ? 1 : 2);
+        bytes(operation, QUEUE_EDIT_TARGET_FIELD, target.toByteArray());
+        varint(operation, QUEUE_EDIT_MODE_FIELD << 3);
+        varint(operation, playNext ? MODE_PLAY_NEXT : MODE_ADD);
         ByteArrayOutputStream endpoint = new ByteArrayOutputStream();
-        bytes(endpoint, 163162354, operation.toByteArray());
+        bytes(endpoint, QUEUE_EDIT_ENDPOINT_FIELD, operation.toByteArray());
         return endpoint.toByteArray();
     }
 
