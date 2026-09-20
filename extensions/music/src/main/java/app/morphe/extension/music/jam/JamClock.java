@@ -80,6 +80,22 @@ public final class JamClock {
             JamUi.main.removeCallbacks(confirm);
         }
     }
+    /** Resolve skip behavior on the host; a guest's local player must never advance. */
+    static void skipHost(boolean next)throws Exception{
+        FutureTask<Void> task=new FutureTask<>(()->{
+            MediaController current=controller;
+            if(current==null)throw new IllegalStateException("Open the host player first");
+            PlaybackState state=current.getPlaybackState();
+            long action=next?PlaybackState.ACTION_SKIP_TO_NEXT:PlaybackState.ACTION_SKIP_TO_PREVIOUS;
+            if(state==null||(state.getActions()&action)==0)
+                throw new IllegalStateException(next?"The host cannot skip forward":"The host cannot skip backward");
+            if(next)current.getTransportControls().skipToNext();
+            else current.getTransportControls().skipToPrevious();
+            return null;
+        });
+        JamUi.main.post(task);
+        try{task.get(5,TimeUnit.SECONDS);}finally{task.cancel(false);}
+    }
     static JSONObject snapshot()throws Exception{
         MediaController c=controller;JSONObject out=new JSONObject().put("generation",generation).put("sequence",++serial).put("sampledAt",SystemClock.elapsedRealtime()).put("videoId",VideoInformation.getVideoId());
         if(c==null)return out;

@@ -54,6 +54,11 @@ public final class JamPlayback {
     public static boolean playButton(View view){
         if(!participant())return false;
         String name="";try{name=view.getResources().getResourceEntryName(view.getId());}catch(Exception ignored){}
+        if("player_control_next_button".equals(name)||"player_control_previous_button".equals(name)){
+            String operation="player_control_next_button".equals(name)?"SKIP_NEXT":"SKIP_PREVIOUS";
+            JamUi.edit(view.getContext(),JamUi.command(operation));
+            return true;
+        }
         if(!name.contains("play_pause_replay"))return false;
         Object item=JamMirror.now();if(item!=null)queueTap(item);else JamUi.toast(view.getContext(),"Waiting for the host queue");return true;
     }

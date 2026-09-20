@@ -47,13 +47,17 @@ public final class JamBridgeService extends Service {
     private static JSONObject snapshot()throws Exception{return nativeCall(()->snapshotOnExecutor(YtmBridge.access()));}
     private static JSONObject execute(JSONObject r)throws Exception{
         String op=r.getString("op");if("HELLO".equals(op))return new JSONObject().put("ok",true);if("SNAPSHOT".equals(op))return snapshot();
-        if(!Arrays.asList("ADD","PLAY_NEXT","REMOVE","MOVE","PLAY","SEEK").contains(op))return error("Unsupported operation");
+        if(!Arrays.asList("ADD","PLAY_NEXT","REMOVE","MOVE","PLAY","SEEK","SKIP_NEXT","SKIP_PREVIOUS").contains(op))return error("Unsupported operation");
         String id=r.getString("id");if(!UUID.fromString(id).toString().equals(id))return error("Invalid command id");
         String body=r.toString();if(requests.containsKey(id))return body.equals(requests.get(id))?new JSONObject(results.get(id)):error("Command id reused");
         if(requests.size()>=8192)return error("Restart YouTube Music to reset command capacity");
         requests.put(id,body);JSONObject result;
         try{
-            if("SEEK".equals(op)){JamClock.seekHost(r.getString("videoId"),r.getLong("position"));result=snapshot().put("dispatched",true);
+            if("SKIP_NEXT".equals(op)||"SKIP_PREVIOUS".equals(op)){
+                snapshot(); // Validate the host's local queue before controlling playback.
+                JamClock.skipHost("SKIP_NEXT".equals(op));
+                result=snapshot().put("dispatched",true);
+            }else if("SEEK".equals(op)){JamClock.seekHost(r.getString("videoId"),r.getLong("position"));result=snapshot().put("dispatched",true);
             }else if("PLAY".equals(op)){
                 String video=r.getString("videoId"),itemId=r.getString("item");
                 long selectedId=nativeCall(()->{YtmBridge.QueueAccess a=YtmBridge.access();snapshotOnExecutor(a);Object selected=null;
