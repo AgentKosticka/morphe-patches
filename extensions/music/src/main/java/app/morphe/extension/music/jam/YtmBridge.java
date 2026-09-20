@@ -11,13 +11,18 @@ public final class YtmBridge {
         default Object[] patch_jamItems() { return patch_jamLaneItems(0); }
         default Object[] patch_jamLaneItems(int lane) { throw new UnsupportedOperationException(); }
         default String patch_jamVideoId(Object item) { throw new UnsupportedOperationException(); }
-        default String patch_jamTitle(Object item) { throw new UnsupportedOperationException(); }
+        default String patch_jamTitle(Object item) {
+            return item instanceof MetadataAccess
+                    ? ((MetadataAccess) item).patch_jamTitle() : patch_jamVideoId(item);
+        }
         default long patch_jamItemId(Object item) { throw new UnsupportedOperationException(); }
         default int patch_jamCurrent() { throw new UnsupportedOperationException(); }
         default boolean patch_jamLocal() { throw new UnsupportedOperationException(); }
         default void patch_jamRemove(int index) { patch_jamRemoveFrom(0, index); }
         default void patch_jamMove(int from, int to) { patch_jamMoveFrom(0, from, to); }
-        default String patch_jamArtist(Object item) { return ""; }
+        default String patch_jamArtist(Object item) {
+            return item instanceof MetadataAccess ? ((MetadataAccess) item).patch_jamArtist() : "";
+        }
         default java.util.concurrent.Future<?> patch_jamRequestMenu(byte[] command) { throw new UnsupportedOperationException(); }
         default Object[] patch_jamMenuItems(Object response) { throw new UnsupportedOperationException(); }
         default Object patch_jamCreateItem(byte[] data,long id) { throw new UnsupportedOperationException(); }
@@ -57,6 +62,12 @@ public final class YtmBridge {
     public interface ItemAccess {
         Object patch_jamArtwork();
         Object patch_jamMenuPayload();
+    }
+
+    /** Optional metadata capability; fallback choices stay in Java. */
+    public interface MetadataAccess {
+        String patch_jamTitle();
+        String patch_jamArtist();
     }
 
     public interface ArtworkAccess {

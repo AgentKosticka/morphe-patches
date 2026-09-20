@@ -12,7 +12,17 @@ import app.morphe.extension.music.shared.VideoInformation;
 
 /** Host clock samples are separate from queue revisions and use local monotonic time. */
 public final class JamClock {
-    public interface Bar { Object patch_jamModel(long position,long duration);void patch_jamClock(long position,long duration); void patch_jamRestore(Object model); }
+    public interface Bar {
+        Object patch_jamCreateModel(long position, long duration, int color, boolean labelEnabled);
+        default Object patch_jamModel(long position, long duration) {
+            return patch_jamCreateModel(position, duration, 0xffffffff, true);
+        }
+        boolean patch_jamDragging();
+        void patch_jamRestore(Object model);
+        default void patch_jamClock(long position, long duration) {
+            if (!patch_jamDragging()) patch_jamRestore(patch_jamModel(position, duration));
+        }
+    }
     private static volatile MediaController controller;
     private static final Map<Bar,Object> bars=new WeakHashMap<>();
     private static JSONObject sample;

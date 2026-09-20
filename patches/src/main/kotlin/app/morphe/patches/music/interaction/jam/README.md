@@ -32,3 +32,51 @@ observable queue, item models, gestures and player components. Removing literal
 obfuscation names does not prove compatibility with uninspected versions. The
 patch remains opt-in and limited to 9.15.51 until additional APKs and user testing
 provide evidence for broader support.
+
+
+## Compatibility and release gates
+
+The supported target remains **YT Music 9.15.51 ARM64**. The supplied 9.34.52,
+9.35.54 and 9.36.50 APKs are candidates, not supported targets. Their initial
+full-patch attempts rejected an ambiguous native menu dispatcher field. This is
+a compatibility failure, not permission to choose the first field.
+
+Discovery follows `APK -> Fingerprint -> JamQueueAbi/JamUiAbi -> validation ->
+installation`. Dynamic fingerprints may consume earlier resolved types. Android
+calls, diagnostics, resources, `methodCall` and `fieldAccess` relationships take
+precedence over implementation names. Clock model construction and inaccessible
+native operations remain bridges; clock defaults, drag policy, metadata fallback
+and queue decisions live in extension Java. No obfuscated version branches are
+permitted. More than one valid semantic candidate must fail, including within an
+alternative resolver; an unrelated candidate with no capability may be discarded.
+
+`JamPatchRegressionTest` uses the real patch and supplied APK, including negative
+fixtures with missing and duplicate required constructors. `validateJam` requires
+an Android SDK and uses `SdkDexVerifier` before constructing the output APK.
+A normal Gradle build alone is not release evidence. Run it with `-PjamApk` and
+`-PjamOutput`; omitting the APK skips fixture tests and cannot satisfy release gates.
+
+Every additional advertised version needs unique resolution, ABI validation,
+full patch application, SDK bytecode verification, APK construction, installation
+and the same two-device smoke matrix as the baseline. Keep `compatibleWith`
+restricted until all these pass for that exact version.
+
+The local Binder bridge advertises additive protocol version 1 and capabilities
+`queue-revisions`, `stable-item-ids` and `stale-edit-rejection`. Missing envelopes
+are treated as the original v1 bridge; malformed envelopes, unsupported required
+versions and missing capabilities are rejected. Network framing is unchanged.
+Pairing pins the Companion release signer and the selected YTM installation's
+signer as well as its capability token. Existing pairings without signer records
+must be renewed.
+
+Publish only after baseline device results and exact Companion interoperability
+pass. Then test the published prerelease through a clean Morphe Manager setup,
+including source metadata, patch discovery, dependency resolution, APK building,
+installation, two-device pairing and reconnect. Local artifacts do not satisfy
+that consumer gate. Keep the upstream PR draft and its review threads unresolved
+until the coordinated evidence supports the responses.
+
+Device testing is performed manually by the user for this release. Never infer a
+pass from installation or a build. Remote transport controls, bulk/playlist/offline
+enqueue, exhaustive Doze/network stress, separate radio-loss failover and physical
+camera validation remain documented limitations.

@@ -77,21 +77,19 @@ private fun BytecodePatchContext.installClock(clock: ClockAbi) {
     val timeBar = mutableClassDefBy(clock.timeBarType)
     timeBar.interfaces.add(CLOCK_BAR)
     timeBar.addBridge(
-        "patch_jamModel",
-        listOf("J", "J"),
+        "patch_jamCreateModel",
+        listOf("J", "J", "I", "Z"),
         "Ljava/lang/Object;",
-        7,
+        8,
         body = """
             new-instance v0, ${clock.concreteModelType}
             invoke-direct {v0}, ${clock.concreteModelType}-><init>()V
             iput-wide p1, v0, ${clock.position}
             iput-wide p3, v0, ${clock.duration}
             iput-wide p1, v0, ${clock.trailingPosition}
-            const/4 v1, -0x1
-            iput v1, v0, ${clock.seekMarkers[0]}
-            iput v1, v0, ${clock.seekMarkers[1]}
-            const/4 v1, 0x1
-            iput-boolean v1, v0, ${clock.active}
+            iput p5, v0, ${clock.overrideColors[0]}
+            iput p5, v0, ${clock.overrideColors[1]}
+            iput-boolean p6, v0, ${clock.active}
             return-object v0
         """,
     )
@@ -107,24 +105,7 @@ private fun BytecodePatchContext.installClock(clock: ClockAbi) {
             return-void
         """,
     )
-    timeBar.addBridge(
-        "patch_jamClock",
-        listOf("J", "J"),
-        "V",
-        6,
-        body = """
-            ${invokeKind(clock.dragging)} {p0}, ${clock.dragging}
-            move-result v0
-            if-nez v0, :done
-            invoke-virtual {p0, p1, p2, p3, p4}, ${timeBar.type}->patch_jamModel(JJ)Ljava/lang/Object;
-            move-result-object v0
-            check-cast v0, ${clock.modelType}
-            ${invokeKind(clock.setModel)} {p0, v0}, $setModel
-            invoke-virtual {p0}, Landroid/view/View;->invalidate()V
-            :done
-            return-void
-        """,
-    )
+    installNativeAccessor(timeBar, "patch_jamDragging", clock.dragging)
 
     val seekOwner = mutableClassDefBy(clock.seek.definingClass)
     val seek = clock.seek.getMutableMethod()

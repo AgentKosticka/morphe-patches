@@ -16,10 +16,10 @@ public final class JamBridgeService extends Service {
     private static long revision;
     private final IJamBridge.Stub binder=new IJamBridge.Stub(){
         public String call(String capability,String request){
-            Trust.caller(JamBridgeService.this,getSharedPreferences("jam",0).getString("companionPackage",Trust.COMPANION));
+            Trust.caller(JamBridgeService.this,getSharedPreferences("jam",0).getString("companionPackage",Trust.COMPANION),Trust.COMPANION_CERT);
             Trust.capability(getSharedPreferences("jam",0).getString("cap",null),capability);
             if(request==null||request.length()>32768)throw new IllegalArgumentException("Request size");
-            synchronized(LOCK){try{return execute(new JSONObject(request)).toString();}catch(Exception e){return error(e.getMessage()).toString();}}
+            synchronized(LOCK){try{return BridgeProtocol.advertise(execute(BridgeProtocol.validate(new JSONObject(request)))).toString();}catch(Exception e){return error(e.getMessage()).toString();}}
         }
     };
     @Override public IBinder onBind(Intent intent){return binder;}
@@ -46,7 +46,7 @@ public final class JamBridgeService extends Service {
     }
     private static JSONObject snapshot()throws Exception{return nativeCall(()->snapshotOnExecutor(YtmBridge.access()));}
     private static JSONObject execute(JSONObject r)throws Exception{
-        String op=r.getString("op");if("SNAPSHOT".equals(op))return snapshot();
+        String op=r.getString("op");if("HELLO".equals(op))return new JSONObject().put("ok",true);if("SNAPSHOT".equals(op))return snapshot();
         if(!Arrays.asList("ADD","PLAY_NEXT","REMOVE","MOVE","PLAY","SEEK").contains(op))return error("Unsupported operation");
         String id=r.getString("id");if(!UUID.fromString(id).toString().equals(id))return error("Invalid command id");
         String body=r.toString();if(requests.containsKey(id))return body.equals(requests.get(id))?new JSONObject(results.get(id)):error("Command id reused");

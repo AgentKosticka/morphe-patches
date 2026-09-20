@@ -2,6 +2,7 @@ package app.morphe.patches.music.interaction.jam
 
 import app.morphe.patcher.Patcher
 import app.morphe.patcher.PatcherConfig
+import app.morphe.patcher.dex.SdkDexVerifier
 import app.morphe.patcher.apk.ApkUtils.applyTo
 import app.morphe.patches.all.misc.clone.cloneAppPatch
 import app.morphe.patches.music.ad.hideAdsPatch
@@ -35,7 +36,9 @@ fun main(arguments: Array<String>) {
     )
     val workspace = Files.createTempDirectory("jam-device-build")
 
-    Patcher(PatcherConfig(input, workspace.toFile())).use { patcher ->
+    val sdk = System.getenv("ANDROID_HOME") ?: System.getenv("ANDROID_SDK_ROOT")
+        ?: error("Jam release validation requires ANDROID_HOME or ANDROID_SDK_ROOT for DEX verification")
+    Patcher(PatcherConfig(input, workspace.toFile(), verifier = SdkDexVerifier(File(sdk)))).use { patcher ->
         patcher += selectedPatches
         runBlocking {
             patcher().collect { result ->
@@ -46,7 +49,7 @@ fun main(arguments: Array<String>) {
 
         val patched = patcher.get()
         if (output == null) {
-            println("Jam patch applied and DEX serialized: $workspace")
+            println("Jam patch applied and DEX verified with Android SDK tools: $workspace")
         } else {
             patched.applyTo(output)
             println("Unsigned isolated device probe: $output")

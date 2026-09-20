@@ -64,16 +64,7 @@ private fun BytecodePatchContext.installQueueAccess(queue: JamQueueAbi) {
             return-void
         """,
     )
-    manager.addBridge(
-        "patch_jamExecutor",
-        emptyList(),
-        "Ljava/util/concurrent/Executor;",
-        2,
-        body = """
-            iget-object v0, p0, ${queue.executor}
-            return-object v0
-        """,
-    )
+    manager.addReferenceGetter("patch_jamExecutor", queue.executor)
     installQueueSnapshots(manager, queue)
     installQueueItemMetadata(manager, queue)
     installQueueCreation(manager, queue)
@@ -101,18 +92,7 @@ private fun BytecodePatchContext.installQueueSnapshots(
             return-object v0
         """,
     )
-    manager.addBridge(
-        "patch_jamCurrent",
-        emptyList(),
-        "I",
-        2,
-        body = """
-            iget-object v0, p0, ${queue.storage.field}
-            ${invokeKind(queue.storage.currentIndex)} {v0}, ${queue.storage.currentIndex}
-            move-result v0
-            return v0
-        """,
-    )
+    installNativeAccessor(manager, "patch_jamCurrent", queue.storage.currentIndex, receiverField = queue.storage.field)
     manager.addBridge(
         "patch_jamLocal",
         emptyList(),
@@ -138,54 +118,8 @@ private fun BytecodePatchContext.installQueueItemMetadata(
     queue: JamQueueAbi,
 ) {
     val item = queue.item
-    manager.addBridge(
-        "patch_jamVideoId",
-        listOf("Ljava/lang/Object;"),
-        "Ljava/lang/String;",
-        3,
-        body = """
-            check-cast p1, ${item.videoId.definingClass}
-            ${invokeKind(item.videoId)} {p1}, ${item.videoId}
-            move-result-object v0
-            return-object v0
-        """,
-    )
-    fun metadata(name: String, accessor: MethodReference, fallback: Boolean) = manager.addBridge(
-        name,
-        listOf("Ljava/lang/Object;"),
-        "Ljava/lang/String;",
-        3,
-        body = buildString {
-            appendLine("instance-of v0, p1, ${item.metadataType}")
-            appendLine("if-eqz v0, :fallback")
-            appendLine("check-cast p1, ${item.metadataType}")
-            appendLine("${invokeKind(accessor)} {p1}, $accessor")
-            appendLine("move-result-object v0")
-            appendLine("return-object v0")
-            appendLine(":fallback")
-            if (fallback) {
-                appendLine("invoke-virtual {p0, p1}, ${manager.type}->patch_jamVideoId(Ljava/lang/Object;)Ljava/lang/String;")
-                appendLine("move-result-object v0")
-            } else {
-                appendLine("const-string v0, \"\"")
-            }
-            appendLine("return-object v0")
-        },
-    )
-    metadata("patch_jamTitle", item.title, true)
-    metadata("patch_jamArtist", item.artist, false)
-    manager.addBridge(
-        "patch_jamItemId",
-        listOf("Ljava/lang/Object;"),
-        "J",
-        4,
-        body = """
-            check-cast p1, ${item.persistentId.definingClass}
-            ${invokeKind(item.persistentId)} {p1}, ${item.persistentId}
-            move-result-wide v0
-            return-wide v0
-        """,
-    )
+    installNativeAccessor(manager, "patch_jamVideoId", item.videoId, opaqueReceiver = true)
+    installNativeAccessor(manager, "patch_jamItemId", item.persistentId, opaqueReceiver = true)
 }
 
 private fun BytecodePatchContext.installQueueCreation(
@@ -530,23 +464,21 @@ private fun BytecodePatchContext.installQueueItemAccess(item: QueueItemAbi) {
     val menuPayload = requireNotNull(item.menuPayload) {
         "Unable to install Jam queue-item menu payload bridge"
     }
+    val metadataAccess = "Lapp/morphe/extension/music/jam/YtmBridge\$MetadataAccess;"
+    concreteImplementationsOf(item.metadataType).forEach { implementation ->
+        val metadata = mutableClassDefBy(implementation.type)
+        metadata.interfaces.add(metadataAccess)
+        listOf("patch_jamTitle" to item.title, "patch_jamArtist" to item.artist).forEach { (name, accessor) ->
+            installNativeAccessor(metadata, name, accessor)
+        }
+    }
     item.implementations.forEach { implementation ->
         val nativeItem = mutableClassDefBy(implementation.type)
         check(implementsType(nativeItem.type, menuPayload.type)) {
             "Jam queue item ${nativeItem.type} cannot provide the resolved menu payload"
         }
         nativeItem.interfaces.add(ITEM_ACCESS)
-        nativeItem.addBridge(
-            "patch_jamArtwork",
-            emptyList(),
-            "Ljava/lang/Object;",
-            2,
-            body = """
-                ${invokeKind(item.artwork)} {p0}, ${item.artwork}
-                move-result-object v0
-                return-object v0
-            """,
-        )
+        installNativeAccessor(nativeItem, "patch_jamArtwork", item.artwork, resultType = "Ljava/lang/Object;")
         nativeItem.addBridge(
             "patch_jamMenuPayload",
             emptyList(),
@@ -574,16 +506,7 @@ private fun BytecodePatchContext.installQueueItemAccess(item: QueueItemAbi) {
     )
     val thumbnail = mutableClassDefBy(item.thumbnailType)
     thumbnail.interfaces.add(THUMBNAIL_ACCESS)
-    thumbnail.addBridge(
-        "patch_jamThumbnailUrl",
-        emptyList(),
-        "Ljava/lang/String;",
-        2,
-        body = """
-            iget-object v0, p0, ${item.thumbnailUrl}
-            return-object v0
-        """,
-    )
+    thumbnail.addReferenceGetter("patch_jamThumbnailUrl", item.thumbnailUrl)
 }
 
 private fun BytecodePatchContext.installQueueManagerCapture(queue: JamQueueAbi) {

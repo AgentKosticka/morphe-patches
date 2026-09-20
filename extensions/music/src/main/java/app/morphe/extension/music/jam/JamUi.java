@@ -30,10 +30,14 @@ public final class JamUi {
     static String capability(Context c){return c.getSharedPreferences("jam",0).getString("cap","");}
     static String companionPackage(Context c){String value=c.getSharedPreferences("jam",0).getString(COMPANION_PACKAGE,Trust.COMPANION);return validPackage(value)?value:Trust.COMPANION;}
     private static boolean validPackage(String value){return value!=null&&value.matches("[A-Za-z][A-Za-z0-9_]*(\\.[A-Za-z][A-Za-z0-9_]*)+");}
-    private static ComponentName companionComponent(Context c,String name){String pkg=companionPackage(c);return new ComponentName(pkg,pkg+name);}
+    private static ComponentName companionComponent(Context c,String name){
+        String pkg=companionPackage(c);
+        if(!Trust.equal(Trust.COMPANION_CERT,Trust.certificate(c,pkg)))throw new SecurityException("Unrecognized Jam Layer signer");
+        return new ComponentName(pkg,pkg+name);
+    }
     static void configureCompanion(Context c){
         EditText input=new EditText(c);input.setSingleLine();input.setText(companionPackage(c));input.setSelectAllOnFocus(true);input.setHint("app.example.jam");input.setPadding(dp(c,24),0,dp(c,24),0);
-        AlertDialog dialog=new AlertDialog.Builder(c).setTitle("Jam Layer package").setMessage("Use an installed companion package. Pairing still requires your approval and a local capability token, but its signing certificate is not checked.").setView(input).setNegativeButton("Cancel",null).setPositiveButton("Use package",null).create();
+        AlertDialog dialog=new AlertDialog.Builder(c).setTitle("Jam Layer package").setMessage("Use an installed companion package. The companion must use the Jam Layer release signing certificate. Pairing requires your approval.").setView(input).setNegativeButton("Cancel",null).setPositiveButton("Use package",null).create();
         dialog.setOnShowListener(d->dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v->{String value=input.getText().toString().trim();if(!validPackage(value)){input.setError("Enter a valid Android package name");return;}resetCompanion(c);c.getSharedPreferences("jam",0).edit().putString(COMPANION_PACKAGE,value).remove("cap").apply();latest=new JSONObject();dialog.dismiss();toast(c,"Package saved. Set up Jam Layer to connect.");}));
         dialog.show();styleDialog(dialog);
     }
@@ -48,7 +52,7 @@ public final class JamUi {
     private static void pollNow(){polling=true;main.removeCallbacks(poll);main.post(poll);}
     private static final Runnable poll=new Runnable(){public void run(){
         if((!observers.isEmpty()||feedEnabled())&&!inFlight&&companion!=null){inFlight=true;updates.execute(()->{
-            JSONObject value;try{value=new JSONObject(companion.call(capability(application),new JSONObject().put("op","VIEW").toString()));}
+            JSONObject value;try{value=companionCall(application, companion, new JSONObject().put("op","VIEW"));}
             catch(Exception e){value=JamBridgeService.error("Jam disconnected");}
             JSONObject received=value;main.post(()->{inFlight=false;latest=received;JamMirror.accept(application,received);JamClock.accept(received);for(Consumer<JSONObject> listener:new ArrayList<>(observers))listener.accept(received);});
         });}
@@ -63,9 +67,15 @@ public final class JamUi {
             };binding=app.bindService(new Intent().setComponent(companionComponent(app,COMPANION_SERVICE)),connection,Context.BIND_AUTO_CREATE);if(!binding)connection=null;
         }catch(Exception e){companion=null;binding=false;connection=null;}
     }
+    private static JSONObject companionCall(Context context, IJamCompanion service, JSONObject request) throws Exception {
+        if (!Trust.equal(Trust.COMPANION_CERT, Trust.certificate(context, companionPackage(context))))
+            throw new SecurityException("Unrecognized Jam Layer signer");
+        JSONObject envelope = BridgeProtocol.advertise(new JSONObject(request.toString()));
+        return BridgeProtocol.validate(new JSONObject(service.call(capability(context), envelope.toString())));
+    }
     static JSONObject command(String operation){try{return new JSONObject().put("op",operation).put("id",UUID.randomUUID().toString());}catch(Exception e){throw new IllegalStateException(e);}}
     static void call(Context c,JSONObject request,Consumer<JSONObject> done){if(Looper.myLooper()!=Looper.getMainLooper()){main.post(()->call(c,request,done));return;}bind(c);pending++;notifyState();("END".equals(request.optString("op"))?updates:commands).execute(()->{
-        JSONObject value;try{IJamCompanion service=companion;if(service==null)throw new IllegalStateException("Enable Jam Layer first");value=new JSONObject(service.call(capability(c),request.toString()));}
+        JSONObject value;try{IJamCompanion service=companion;if(service==null)throw new IllegalStateException("Enable Jam Layer first");value=companionCall(c, service, request);}
         catch(Exception e){value=JamBridgeService.error(e.getMessage());}
         JSONObject response=value;main.post(()->{pending=Math.max(0,pending-1);if(response.optBoolean("ok")&&"GUEST_EDITS".equals(request.optString("op"))){try{JSONObject state=latest.optJSONObject("session");if(state!=null)state.put("allowGuestEdits",request.optBoolean("allow"));}catch(Exception ignored){}}done.accept(response);if(response.optBoolean("ok"))pollNow();notifyState();});
     });}
@@ -80,7 +90,7 @@ public final class JamUi {
     public static void open(Context context){JamPanel.show(context);}
     static void host(Context c){try{startLayer(c);edit(c,command("HOST"));}catch(Exception e){setup(c);}}    static void pair(Context c){
         Activity a=activity(c);if(a==null)return;
-        try{byte[] bytes=new byte[32];new SecureRandom().nextBytes(bytes);StringBuilder token=new StringBuilder();for(byte b:bytes)token.append(String.format(Locale.ROOT,"%02x",b&255));
+        try{if(!Trust.equal(Trust.COMPANION_CERT,Trust.certificate(c,companionPackage(c))))throw new SecurityException("Unrecognized Jam Layer signer");byte[] bytes=new byte[32];new SecureRandom().nextBytes(bytes);StringBuilder token=new StringBuilder();for(byte b:bytes)token.append(String.format(Locale.ROOT,"%02x",b&255));
             c.getSharedPreferences("jam",0).edit().putString("cap",token.toString()).commit();
             a.startActivityForResult(new Intent("app.morphe.jam.PAIR").setComponent(companionComponent(c,COMPANION_ACTIVITY)).putExtra("cap",token.toString()),18431);
             main.postDelayed(()->bind(c),1500);
@@ -123,7 +133,7 @@ public final class JamUi {
         if(companion==null){if(JamMirror.active()){main.post(()->toast(a,"Jam is reconnecting; try again shortly"));return true;}return false;}
         Runnable local=()->access.patch_jamExecutor().execute(()->access.patch_jamEnqueue(bytes));
         commands.execute(()->{try{
-            JSONObject state=new JSONObject(companion.call(capability(a),new JSONObject().put("op","STATE").toString()));
+            JSONObject state=companionCall(a, companion, new JSONObject().put("op","STATE"));
             if(!"Participant".equals(state.optString("role"))){local.run();return;}
             call(a,command(decoded[1]).put("videoId",decoded[0]),response->toast(a,response.optBoolean("ok")?"Added to Jam":response.optString("error")));
         }catch(Exception e){main.post(()->toast(a,"Jam is unavailable; the track was not added"));}});return true;

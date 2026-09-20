@@ -2,8 +2,17 @@ package app.morphe.patches.music.interaction.jam
 
 import app.morphe.patcher.extensions.InstructionExtensions.instructionsOrNull
 import app.morphe.patcher.patch.BytecodePatchContext
+import app.morphe.patcher.fieldAccess
+import app.morphe.patcher.methodCall
+import app.morphe.util.getMutableMethod
+import app.morphe.util.findInstructionIndicesReversed
+import app.morphe.patcher.extensions.InstructionExtensions.getInstruction
+import app.morphe.util.findInstructionIndicesReversedOrThrow
+import app.morphe.util.p0Register
+import com.android.tools.smali.dexlib2.iface.instruction.TwoRegisterInstruction
 import app.morphe.util.getReference
 import app.morphe.util.matchSingle
+import com.android.tools.smali.dexlib2.util.MethodUtil
 import com.android.tools.smali.dexlib2.AccessFlags
 import com.android.tools.smali.dexlib2.Opcode
 import com.android.tools.smali.dexlib2.iface.ClassDef
@@ -16,12 +25,6 @@ private const val OBJECT = "Ljava/lang/Object;"
 private const val OPTIONAL = "Lj$/util/Optional;"
 private const val MAP = "Ljava/util/Map;"
 private const val VIEW = "Landroid/view/View;"
-private const val PLAYER_CONTROLS =
-    "Lcom/google/android/apps/youtube/music/watchpage/MusicPlaybackControls;"
-private const val PLAYER_TIME_BAR =
-    "Lcom/google/android/apps/youtube/music/watchpage/MusicPlaybackControlsTimeBar;"
-private const val WATCH_FRAGMENT =
-    "Lcom/google/android/apps/youtube/music/watch/WatchFragment;"
 
 internal data class JamUiAbi(
     val clock: ClockAbi,
@@ -45,7 +48,7 @@ internal data class ClockAbi(
     val position: FieldReference,
     val duration: FieldReference,
     val trailingPosition: FieldReference,
-    val seekMarkers: List<FieldReference>,
+    val overrideColors: List<FieldReference>,
     val active: FieldReference,
     val seek: MethodReference,
 )
@@ -132,46 +135,32 @@ internal fun BytecodePatchContext.resolveJamUiAbi(queue: JamQueueAbi): JamUiAbi 
 
 private fun BytecodePatchContext.resolveClock(): ClockAbi {
     val mediaState = MediaSessionStateFingerprint.matchSingle().originalMethod
-    val timeBar = classDefByOrNull(PLAYER_TIME_BAR)
-        ?: error("Unable to resolve Jam playback time bar")
-    val baseCandidates = hierarchy(timeBar.type).flatMap { owner ->
-        owner.methods.filter { method ->
-            method.parameters().size == 1 && method.parameters().single().isReferenceType() &&
-                method.returnType == "V" && owner.fields.any { it.type == method.parameters().single() } &&
-                classDefByOrNull(method.parameters().single())?.methods?.count {
-                    it.parameters().isEmpty() && it.returnType == "J"
-                } ?: 0 >= 3
-        }
-    }
-    val setModel = baseCandidates.requireSingle("Jam playback clock model setter")
+    val timeBar = PlaybackTimeBarFingerprint.matchSingle().originalClassDef
+    val setModel = clockModelSetterFingerprint(timeBar.type).matchSingle().originalMethod
     val timeBase = classDefBy(setModel.definingClass)
-    val dragging = timeBase.methods.filter {
-        it.parameters().isEmpty() && it.returnType == "Z"
-    }.requireSingle("Jam playback clock drag-state accessor")
+    val dragging = clockDraggingFingerprint(timeBase.type).matchSingle().originalMethod
     val model = classDefBy(setModel.parameters().single())
-    val concrete = concreteImplementationsOf(model.type).mapNotNull { candidate ->
-        val setter = candidate.methods.singleOrNull {
-            it.parameters() == listOf("J", "J", "J", "J") && it.returnType == "V"
-        } ?: return@mapNotNull null
-        candidate to setter
-    }.requireSingle("Jam playback clock mutable model")
-    val modelWrites = concrete.second.referenceInstructions().filter { it.opcode == Opcode.IPUT_WIDE }
-        .mapNotNull { it.getReference<FieldReference>() }
-        .filter { it.definingClass == concrete.first.type }
-        .distinctBy { it.fieldKey() }
-    require(modelWrites.size == 4) { "Unable to resolve Jam playback clock model fields" }
-    val markerFields = model.methods.filter { it.parameters().isEmpty() && it.returnType == "I" }
-        .takeLast(2).map { getter ->
-            concrete.first.methods.filter { it.sameSignature(getter) }.flatMap { it.fieldReferences() }
-                .filter { it.definingClass == concrete.first.type && it.type == "I" }
-                .requireSingle("Jam playback clock seek marker")
-        }
-    val activeGetter = model.methods.filter { it.parameters().isEmpty() && it.returnType == "Z" }
-        .lastOrNull().requireValue("Jam playback clock active-state accessor")
-    val active = concrete.first.methods.filter { it.sameSignature(activeGetter) }
-        .flatMap { it.fieldReferences() }
-        .filter { it.definingClass == concrete.first.type && it.type == "Z" }
-        .requireSingle("Jam playback clock active-state field")
+    val modelMatch = clockMutableModelFingerprint(model.type).matchSingle()
+    val concrete = modelMatch.originalClassDef to modelMatch.originalMethod
+    val setter = concrete.second
+    val writes = setter.findInstructionIndicesReversedOrThrow(
+        fieldAccess(definingClass = concrete.first.type, type = "J", opcode = Opcode.IPUT_WIDE)
+    )
+    fun timestamp(parameterRegister: Int): FieldReference {
+        val write = writes.filter { setter.getInstruction<TwoRegisterInstruction>(it).registerA == setter.p0Register + parameterRegister }
+            .singleOrNull() ?: error("Missing or ambiguous â€“ Jam clock timestamp parameter p$parameterRegister")
+        return requireNotNull(setter.getInstruction(write).getReference<FieldReference>())
+    }
+    val colorBinding = clockOverrideColorsFingerprint(timeBar.type, model.type).matchSingle()
+    val overrideColors = listOf(2, 4).map { index ->
+        val accessor = colorBinding.instructionMatches[index].instruction.getReference<MethodReference>()!!
+        clockModelFieldFingerprint(concrete.first.type, accessor).matchSingle().instructionMatches[0].getFieldAccessed()
+    }
+    require(overrideColors.distinct().size == 2) { "Jam clock override colors must be distinct fields" }
+    val activeGetter = clockLabelEnabledFingerprint(timeBar.type, model.type, dragging)
+        .matchSingle().instructionMatches[0].instruction.getReference<MethodReference>()!!
+    val active = clockModelFieldFingerprint(concrete.first.type, activeGetter)
+        .matchSingle().instructionMatches[0].getFieldAccessed()
     val seek = resolveSeek(timeBar)
     return ClockAbi(
         mediaState,
@@ -181,10 +170,10 @@ private fun BytecodePatchContext.resolveClock(): ClockAbi {
         dragging,
         model.type,
         concrete.first.type,
-        modelWrites.first(),
-        modelWrites.last(),
-        modelWrites[2],
-        markerFields,
+        timestamp(1),
+        timestamp(5),
+        timestamp(7),
+        overrideColors,
         active,
         seek,
     )
@@ -196,72 +185,37 @@ private fun BytecodePatchContext.resolveSeek(timeBar: ClassDef): MethodReference
         .distinctBy { it.type }
     val controlInterfaces = controls.flatMap { implementedInterfaces(it.type) }.toSet()
     require(controlInterfaces.isNotEmpty()) { "Unable to resolve Jam playback-control listener interfaces" }
-    val candidates = seekForwarderFingerprint(controlInterfaces).matchAll()
-        .map { it.originalMethod }
-        .filter { method ->
-            method.methodReferences().any { forwarded ->
-                forwarded.parameters() == method.parameters() && forwarded.returnType == "V"
-            }
-        }
-    return candidates.requireSingle("Jam playback seek forwarder")
+    return seekForwarderFingerprint(controlInterfaces).matchSingle().originalMethod
 }
 
 private fun BytecodePatchContext.resolvePalette(): PaletteAbi {
-    val candidates = PalettePublicationFingerprint.matchAll().flatMap { match ->
+    val candidates = PalettePublicationFingerprint.matchAll().mapNotNull { match ->
         val source = match.originalClassDef
-        val entry = match.originalMethod
-            source.fields.flatMap { extractor ->
-                val extractorClass = classDefByOrNull(extractor.type) ?: return@flatMap emptyList()
-                extractorClass.methods.filter { method ->
-                    method.parameters() == listOf("Landroid/graphics/Bitmap;") && method.returnType.isReferenceType()
-                }.flatMap { extract ->
-                    val paletteType = extract.returnType
-                    source.fields.flatMap { publisher ->
-                        val publisherClass = classDefByOrNull(publisher.type) ?: return@flatMap emptyList()
-                        publisherClass.methods.filter { method ->
-                            method.parameters() == listOf(OBJECT) && method.returnType == "V"
-                        }.flatMap { publish ->
-                            source.methods.filter { local ->
-                                AccessFlags.PUBLIC.isSet(local.accessFlags) &&
-                                    local.parameters() == listOf(paletteType) && local.returnType == "V" &&
-                                    entry.methodReferences().any { it.sameMethod(publish) } &&
-                                    entry.methodReferences().any { it.sameMethod(local) }
-                            }.map { local -> PaletteAbi(source.type, entry, extractor, extract, publisher, publish, local) }
-                        }
-                    }
-                }
-            }
+        val publish = match.instructionMatches[0].instruction.getReference<MethodReference>()!!
+        val local = match.instructionMatches[1].instruction.getReference<MethodReference>()!!
+        val extractors = paletteExtractorFingerprint(local.parameterTypes[0].toString(), source.fields.map { it.type }.toSet())
+            .matchAll(0..1)
+        if (extractors.isEmpty()) return@mapNotNull null
+        val extract = extractors.single().originalMethod
+        val extractor = source.fields.filter { it.type == extract.definingClass }
+            .singleOrNull() ?: error("Missing or ambiguous â€“ Jam palette extractor field")
+        val publisher = source.fields.filter { it.type == publish.definingClass }
+            .singleOrNull() ?: error("Missing or ambiguous â€“ Jam palette publisher field")
+        PaletteAbi(source.type, match.originalMethod, extractor, extract, publisher, publish, local)
     }
-    return candidates.requireSingle("Jam player palette pipeline")
+    return candidates.singleOrNull() ?: error("Missing or ambiguous â€“ Jam player palette pipeline")
 }
 
 private fun BytecodePatchContext.resolvePlayback(): PlaybackAbi {
     val anchor = AccountScopedCommandRouterFingerprint.matchSingle()
     val outer = anchor.originalClassDef
     val peer = classDefBy(anchor.originalMethod.returnType)
-    val outerDispatch = outer.methods.filter { method ->
-        val parameters = method.parameters()
-        parameters.size == 2 && parameters[0].isReferenceType() && parameters[1] == MAP &&
-            method.returnType == "V" &&
-            method.methodReferences().any { reference ->
-                reference.parameters() == parameters && reference.returnType == "V" &&
-                    classDefByOrNull(reference.definingClass)
-                        ?.let { AccessFlags.INTERFACE.isSet(it.accessFlags) } == true
-            } &&
-            method.methodReferences().any { reference ->
-                reference.returnType == "Z" && reference.parameters().lastOrNull() == parameters[0]
-            }
-    }.requireSingle("Jam account-scoped command-router dispatch")
-    val forwarder = outerDispatch.methodReferences().filter { reference ->
-        reference.parameters() == outerDispatch.parameters() && reference.returnType == "V" &&
-            classDefByOrNull(reference.definingClass)
-                ?.let { AccessFlags.INTERFACE.isSet(it.accessFlags) } == true
-    }.distinctBy { it.methodKey() }.requireSingle("Jam account-scoped command-router forwarder")
-    val peerDispatch = peer.methods.filter { method ->
-        method.parameters() == outerDispatch.parameters() && method.returnType == "V" &&
-            method.methodReferences().any { it.sameMethod(forwarder) }
-    }.requireSingle("Jam account-scoped peer command-router dispatch")
-    val command = resolveProto(outerDispatch.parameters().first(), "account command-router endpoint")
+    val dispatchMatch = accountRouterDispatchFingerprint(outer.type).matchSingle()
+    val outerDispatch = dispatchMatch.originalMethod
+    val forwarder = dispatchMatch.instructionMatches[0].instruction.getReference<MethodReference>()!!
+    require(forwarder.parameterTypes == outerDispatch.parameterTypes) { "Jam router changes endpoint parameters" }
+    val peerDispatch = accountPeerDispatchFingerprint(peer.type, forwarder).matchSingle().originalMethod
+    val command = resolveProto(outerDispatch.parameters()[0], "account command-router endpoint")
     fun router(owner: ClassDef, dispatch: Method): PlaybackRouterAbi {
         return PlaybackRouterAbi(owner.type, dispatch)
     }
@@ -272,12 +226,11 @@ private fun BytecodePatchContext.resolvePlayback(): PlaybackAbi {
 }
 
 private fun BytecodePatchContext.resolveCurrentItem(): CurrentItemAbi {
-    val source = CurrentPlaybackItemSourceFingerprint.matchSingle().originalMethod
-    val sourceTypes = source.fieldReferences().filter { it.definingClass == WATCH_FRAGMENT }
-        .map { it.type }.toSet()
-    val accessor = source.methodReferences().filter { method ->
-        method.parameters().isEmpty() && method.returnType == OPTIONAL && method.definingClass in sourceTypes
-    }.distinctBy { it.methodKey() }.requireSingle("Jam current playback item accessor")
+    val source = CurrentPlaybackItemSourceFingerprint.matchSingle()
+    val accessor = source.instructionMatches[1].instruction.getReference<MethodReference>()!!
+    require(source.originalClassDef.fields.any { it.type == accessor.definingClass }) {
+        "Jam current-item source must be owned by the watch page"
+    }
     return CurrentItemAbi(accessor.definingClass, accessor)
 }
 
@@ -296,15 +249,10 @@ private fun BytecodePatchContext.resolveNowPlaying(
         val candidate = match.originalClassDef
         val entry = match.originalMethod
         run {
-            val lookup = entry.methodReferences().filter { reference ->
-                reference.parameters() == listOf("I") && reference.returnType == item.videoId.definingClass
-            }.distinctBy { it.methodKey() }.singleOrNull() ?: return@mapNotNull null
-            val ownerTypes = hierarchy(candidate.type).map { it.type }.toSet()
-            val refresh = candidate.methods.flatMap { it.methodReferences() }.filter { reference ->
-                reference.name != "<init>" && reference.name != "<clinit>" &&
-                reference.parameters().isEmpty() && reference.returnType == "V" &&
-                    reference.definingClass in ownerTypes
-            }.distinctBy { it.methodKey() }.singleOrNull() ?: return@mapNotNull null
+            val lookup = match.instructionMatches[0].instruction.getReference<MethodReference>()!!
+            val ownerTypes = interfaceClosure(candidate.type)
+            val refresh = queuePresenterRefreshFingerprint(ownerTypes, candidate.methods).matchAll(0..1)
+                .singleOrNull()?.originalMethod ?: return@mapNotNull null
             QueueBindingAbi(candidate.type, entry, lookup, refresh)
         }
     }
@@ -313,10 +261,9 @@ private fun BytecodePatchContext.resolveNowPlaying(
 }
 
 private fun BytecodePatchContext.resolveArtwork(): ArtworkAbi {
-    val match = NowPlayingArtworkFingerprint.matchSingle()
-    val image = match.originalMethod.fieldReferences().filter {
-        it.definingClass == match.originalClassDef.type && it.type == AUTO_CROP_IMAGE_VIEW
-    }.distinctBy { it.fieldKey() }.requireSingle("Jam now-playing artwork view")
+    val imageType = ArtworkCropFingerprint.matchSingle().originalClassDef.type
+    val match = nowPlayingArtworkFingerprint(imageType).matchSingle()
+    val image = match.instructionMatches[0].getFieldAccessed()
     return ArtworkAbi(match.originalClassDef.type, match.originalMethod, image)
 }
 
@@ -324,64 +271,53 @@ private fun BytecodePatchContext.resolveQueueRow(
     item: QueueItemAbi,
     nowPlayingEntry: MethodReference,
 ): QueueRowAbi {
-    val nowPlayingMethod = classDefBy(nowPlayingEntry.definingClass).methods.single {
-        it.sameMethod(nowPlayingEntry)
-    }
-    val menuDispatch = nowPlayingMethod.methodReferences().filter { method ->
-        method.parameters().size == 4 && method.parameters()[1] == VIEW && method.returnType == "V"
-    }.distinctBy { it.methodKey() }.requireSingle("Jam watch-page menu dispatch")
+    val menuMatch = nowPlayingMenuDispatchFingerprint(nowPlayingEntry).matchSingle()
+    val nowPlayingMethod = menuMatch.originalMethod
+    val menuDispatch = menuMatch.instructionMatches[0].instruction.getReference<MethodReference>()!!
     val itemTypes = (listOf(item.type) + item.implementations.map { it.type }).distinct()
     val candidates = itemTypes.flatMap { itemType ->
         queueRowBindingFingerprint(itemType).matchAllOrNull().orEmpty()
     }.mapNotNull { match ->
         val row = match.originalClassDef
         val bind = match.originalMethod
-        val itemField = bind.referenceInstructions().filter { it.opcode == Opcode.IPUT_OBJECT }
-            .mapNotNull { it.getReference<FieldReference>() }
-            .filter { it.definingClass == row.type && it.type in itemTypes }
-            .distinctBy { it.fieldKey() }
-            .singleOrNull() ?: return@mapNotNull null
-        val root = row.methods.singleOrNull { it.parameters().isEmpty() && it.returnType == VIEW }
+        val itemField = match.instructionMatches[0].getFieldAccessed()
+        val root = queueRowRootFingerprint(row.type).matchAll(0..1).singleOrNull()?.originalMethod
             ?: return@mapNotNull null
-        val click = row.methods.singleOrNull { method ->
-            method.parameters() == listOf(VIEW) && method.returnType == "Z"
-        } ?: return@mapNotNull null
-        val metadata = classDefBy(item.metadataType)
-        val menuAccessor = metadata.methods.singleOrNull {
-            it.parameters().isEmpty() && it.returnType == menuDispatch.parameters().first()
-        } ?: return@mapNotNull null
-        val menuPayload = nowPlayingMethod.methodReferences().filter { method ->
+        val click = queueRowLongClickFingerprint(row.type).matchAll(0..1).singleOrNull()?.originalMethod
+            ?: return@mapNotNull null
+        val menuAccessor = queueMenuAccessorFingerprint(item.metadataType, menuDispatch.parameterTypes[0].toString())
+            .matchSingle().originalMethod
+        val menuPayload = nowPlayingMethod.findInstructionIndicesReversed(methodCall(parameters = emptyList(), returnType = menuAccessor.returnType))
+            .map { nowPlayingMethod.getInstruction(it).getReference<MethodReference>()!! }.filter { method ->
             method.parameters().isEmpty() && method.returnType == menuAccessor.returnType &&
                 classDefByOrNull(method.definingClass)
                     ?.let { AccessFlags.INTERFACE.isSet(it.accessFlags) } == true &&
                 item.implementations.all { implementation ->
                     implementsType(implementation.type, method.definingClass)
                 }
-        }.distinctBy { it.methodKey() }.map {
+        }.distinctBy { it.toString() }.map {
             QueueItemMenuPayloadAbi(it.definingClass)
-        }.singleOrNull() ?: return@mapNotNull null
-        val presenter = row.fields.singleOrNull { it.type == menuDispatch.definingClass }
-            ?: return@mapNotNull null
-        val context = row.fields.singleOrNull { it.type == menuDispatch.parameters()[3] }
-            ?: return@mapNotNull null
+        }.also { require(it.size <= 1) { "Ambiguous Jam queue menu payload: $it" } }
+            .singleOrNull() ?: return@mapNotNull null
+        val presenter = row.fields.filter { it.type == menuDispatch.definingClass }
+            .also { require(it.size <= 1) { "Ambiguous Jam row presenter in ${row.type}" } }
+            .singleOrNull() ?: return@mapNotNull null
+        val context = row.fields.filter { it.type == menuDispatch.parameters()[3] }
+            .also { require(it.size <= 1) { "Ambiguous Jam row context in ${row.type}" } }
+            .singleOrNull() ?: return@mapNotNull null
         QueueRowAbi(row.type, itemField, root, bind, click, menuAccessor, presenter, context, menuPayload, menuDispatch)
-    }.distinctBy { it.type to it.bind.methodKey() }
-    return candidates.requireSingle("Jam queue row and menu presenter")
+    }.distinctBy { it.type to it.bind.toString() }
+    return candidates.singleOrNull() ?: error("Missing or ambiguous â€“ Jam queue row and menu presenter")
 }
 
 private fun BytecodePatchContext.resolveButtons(): List<ButtonAbi> {
-    val controls = classDefByOrNull(PLAYER_CONTROLS)
-        ?: error("Unable to resolve Jam stable playback controls")
+    val controls = PlaybackControlViewsFingerprint.matchSingle().originalClassDef
     return (
         playbackControlsClickFingerprint(controls.type).matchAll() +
             playbackButtonClickFingerprint(controls.type).matchAll()
         ).map { match -> ButtonAbi(match.originalClassDef.type, match.originalMethod) }
         .distinctBy { it.type }
 }
-
-private fun BytecodePatchContext.hierarchy(type: String): List<ClassDef> = generateSequence(classDefByOrNull(type)) {
-    it.superclass?.let(::classDefByOrNull)
-}.toList()
 
 private fun BytecodePatchContext.implementedInterfaces(type: String): Set<String> {
     val interfaces = mutableSetOf<String>()
@@ -398,40 +334,6 @@ private fun Method.parameters(): List<String> = parameterTypes.map { it.toString
 
 private fun MethodReference.parameters(): List<String> = parameterTypes.map { it.toString() }
 
-private fun Method.referenceInstructions(): List<ReferenceInstruction> =
-    instructionsOrNull?.filterIsInstance<ReferenceInstruction>().orEmpty()
-
-private fun Method.methodReferences(): List<MethodReference> = referenceInstructions()
-    .mapNotNull { it.getReference<MethodReference>() }
-
-private fun Method.fieldReferences(): List<FieldReference> = referenceInstructions()
-    .mapNotNull { it.getReference<FieldReference>() }
-
-private fun Method.sameMethod(other: MethodReference): Boolean =
-    definingClass == other.definingClass && name == other.name && parameters() == other.parameters() &&
-        returnType == other.returnType
-
-private fun Method.sameSignature(other: MethodReference): Boolean =
-    name == other.name && parameters() == other.parameters() && returnType == other.returnType
-
-private fun MethodReference.sameMethod(other: MethodReference): Boolean =
-    definingClass == other.definingClass && name == other.name && parameters() == other.parameters() &&
-        returnType == other.returnType
-
-private fun FieldReference.sameField(other: FieldReference): Boolean =
-    definingClass == other.definingClass && name == other.name && type == other.type
-
-private fun FieldReference.fieldKey(): String = "$definingClass->$name:$type"
-
-private fun MethodReference.methodKey(): String =
-    "$definingClass->$name(${parameters().joinToString()})$returnType"
-
 private fun String.isReferenceType(): Boolean = startsWith("L") || startsWith("[")
-
-private fun <T> Iterable<T>.requireSingle(concept: String): T {
-    val values = toList()
-    require(values.size == 1) { "Unable to resolve $concept: expected one candidate, found ${values.size}" }
-    return values.single()
-}
 
 private fun <T> T?.requireValue(concept: String): T = this ?: error("Unable to resolve $concept")
