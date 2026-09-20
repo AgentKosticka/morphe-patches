@@ -6,6 +6,19 @@ import java.util.*;
 
 /** Native adapters display authoritative state plus unacknowledged local gestures. */
 public final class JamMirror {
+    public interface AutoplayUi {
+        void patch_jamAutoplayLimit(int count);
+        void patch_jamRefreshAutoplayUi();
+    }
+    private static final Set<AutoplayUi> autoplayViews=Collections.newSetFromMap(new WeakHashMap<>());
+    public static void autoplayUi(AutoplayUi view){
+        autoplayViews.add(view);
+        NativeQueueList lane=autoplay;
+        if(mirror!=null&&lane!=null)view.patch_jamAutoplayLimit(lane.size());
+    }
+    private static void refreshAutoplayUi(){
+        for(AutoplayUi view:new ArrayList<>(autoplayViews))view.patch_jamRefreshAutoplayUi();
+    }
     private static volatile NativeQueueList mirror,autoplay;
     private static Object original,originalAutoplay;
     private static YtmBridge.QueueAccess owner;
@@ -24,7 +37,7 @@ public final class JamMirror {
             if(!participant){
                 if(owner==access&&mirror!=null&&access.patch_jamDisplayedList()==mirror)access.patch_jamDisplayedList(original);
                 if(owner==access&&autoplay!=null&&access.patch_jamDisplayedAutoplay()==autoplay)access.patch_jamDisplayedAutoplay(originalAutoplay);
-                boolean wasActive=mirror!=null;mirror=null;autoplay=null;original=null;originalAutoplay=null;owner=null;snapshot=null;rendered="";current=-1;edits.clear();sending=false;epoch++;if(wasActive){JamArtwork.clear();JamPlayback.refresh();}return;
+                boolean wasActive=mirror!=null;mirror=null;autoplay=null;original=null;originalAutoplay=null;owner=null;snapshot=null;rendered="";current=-1;edits.clear();sending=false;epoch++;if(wasActive){refreshAutoplayUi();JamArtwork.clear();JamPlayback.refresh();}return;
             }
             if(!view.has("items"))return;
             if(owner!=access){mirror=null;autoplay=null;rendered="";owner=access;original=access.patch_jamDisplayedList();originalAutoplay=access.patch_jamDisplayedAutoplay();edits.clear();sending=false;epoch++;}
@@ -49,7 +62,7 @@ public final class JamMirror {
         if(owner.patch_jamDisplayedList()!=mirror){owner.patch_jamDisplayedList(mirror);refreshed=true;}else if(changed)owner.patch_jamRefreshDisplay();
         if(owner.patch_jamDisplayedAutoplay()!=autoplay){owner.patch_jamDisplayedAutoplay(autoplay);refreshed=true;}else if(changed)owner.patch_jamRefreshAutoplay();
         if(playing>=0){JSONObject row=rows.getJSONObject(playing);JamArtwork.update(QueueModel.thumbnail(row.optString("thumbnail"),row.getString("videoId")));}else JamArtwork.clear();
-        if(refreshed||currentChanged)JamPlayback.refresh();
+        if(refreshed||currentChanged){refreshAutoplayUi();JamPlayback.refresh();}
     }
     private static Object item(JSONObject row)throws Exception{return owner.patch_jamCreateItem(QueueModel.encode(row.getString("videoId"),row.optString("title"),row.optString("artist"),row.optString("thumbnail")),Long.parseLong(row.getString("id")));}
     public static Object now(){NativeQueueList list=mirror;int index=current;return list!=null&&index>=0&&index<list.size()?list.get(index):null;}

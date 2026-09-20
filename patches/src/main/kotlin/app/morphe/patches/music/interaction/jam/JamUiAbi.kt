@@ -35,6 +35,13 @@ internal data class JamUiAbi(
     val artwork: ArtworkAbi,
     val queueRow: QueueRowAbi,
     val buttons: List<ButtonAbi>,
+    val autoplay: AutoplayUiAbi,
+)
+
+internal data class AutoplayUiAbi(
+    val refresh: MethodReference,
+    val limiter: FieldReference,
+    val setLimit: MethodReference,
 )
 
 internal data class ClockAbi(
@@ -130,7 +137,7 @@ internal fun BytecodePatchContext.resolveJamUiAbi(queue: JamQueueAbi): JamUiAbi 
     val nowPlaying = resolveNowPlaying(currentItem, queue.item)
     val queueRow = resolveQueueRow(queue.item, nowPlaying.menuEntry)
     val buttons = resolveButtons()
-    return JamUiAbi(clock, palette, playback, currentItem, nowPlaying, artwork, queueRow, buttons)
+    return JamUiAbi(clock, palette, playback, currentItem, nowPlaying, artwork, queueRow, buttons, resolveAutoplayUi(queue))
 }
 
 private fun BytecodePatchContext.resolveClock(): ClockAbi {
@@ -337,3 +344,16 @@ private fun MethodReference.parameters(): List<String> = parameterTypes.map { it
 private fun String.isReferenceType(): Boolean = startsWith("L") || startsWith("[")
 
 private fun <T> T?.requireValue(concept: String): T = this ?: error("Unable to resolve $concept")
+
+private fun BytecodePatchContext.resolveAutoplayUi(queue: JamQueueAbi): AutoplayUiAbi {
+    val owner = autoplaySectionOwnerFingerprint(queue.managerType, queue.displays.autoplay.type)
+        .matchSingle().originalClassDef
+    val refresh = autoplaySectionRefreshFingerprint(owner.type).matchSingle()
+    val setLimit = refresh.instructionMatches[1].instruction.getReference<MethodReference>()!!
+    val method = refresh.originalMethod
+    val limiter = method.findInstructionIndicesReversedOrThrow(
+        fieldAccess(definingClass = owner.type, type = setLimit.definingClass, opcode = Opcode.IGET_OBJECT)
+    ).map { method.getInstruction(it).getReference<FieldReference>()!! }.distinct().singleOrNull()
+        ?: error("Missing or ambiguous Jam autoplay display limiter")
+    return AutoplayUiAbi(method, limiter, setLimit)
+}

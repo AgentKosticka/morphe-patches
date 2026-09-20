@@ -658,3 +658,19 @@ internal fun BytecodePatchContext.nativeImplementationFingerprint(contractType: 
     custom = { _, owner -> !AccessFlags.ABSTRACT.isSet(owner.accessFlags) &&
         !AccessFlags.INTERFACE.isSet(owner.accessFlags) && implementsType(owner.type, contractType) },
 )
+
+/** Native queue section owns both lane adapters and the user's local autoplay setting. */
+internal fun autoplaySectionOwnerFingerprint(managerType: String, displayType: String) = Fingerprint(
+    name = "<init>", strings = listOf("autoplay_enabled"),
+    filters = listOf(methodCall(definingClass = managerType, parameters = listOf("I"), returnType = displayType)),
+)
+
+/** Projects the autoplay lane through a count-limited adapter and maintains its header. */
+internal fun autoplaySectionRefreshFingerprint(ownerType: String) = Fingerprint(
+    definingClass = ownerType, parameters = emptyList(), returnType = "V",
+    filters = listOf(
+        methodCall(name = "isEmpty", parameters = emptyList(), returnType = "Z"),
+        methodCall(parameters = listOf("I"), returnType = "V"),
+        methodCall(name = "clear", parameters = emptyList(), returnType = "V"),
+    ),
+)

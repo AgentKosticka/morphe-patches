@@ -31,6 +31,7 @@ private const val ITEM_ACCESS = "Lapp/morphe/extension/music/jam/YtmBridge\$Item
 /** Installs presentation bridges after [JamUiAbi] has resolved each native relationship. */
 internal fun BytecodePatchContext.installJamUiBridges(ui: JamUiAbi, queue: JamQueueAbi) {
     installClock(ui.clock)
+    installAutoplayUi(ui.autoplay)
     installPalette(ui.palette)
     installPlayback(ui.playback)
     installCurrentItem(ui.currentItem)
@@ -448,3 +449,27 @@ private fun Method.parameters(): List<String> = parameterTypes.map { it.toString
 
 private fun MethodReference.parameters(): List<String> = parameterTypes.map { it.toString() }
 
+
+private fun BytecodePatchContext.installAutoplayUi(abi: AutoplayUiAbi) {
+    val extension = "Lapp/morphe/extension/music/jam/JamMirror;"
+    val contract = "Lapp/morphe/extension/music/jam/JamMirror\$AutoplayUi;"
+    val owner = mutableClassDefBy(abi.refresh.definingClass)
+    owner.interfaces.add(contract)
+    val refresh = abi.refresh.getMutableMethod()
+    val name = refresh.name
+    refresh.setName("patch_jamLocalAutoplayUi")
+    owner.addBridge(name, emptyList(), "V", 1, refresh.accessFlags, """
+        ${invokeKind(abi.refresh)} {p0}, $refresh
+        invoke-static {p0}, $extension->autoplayUi($contract)V
+        return-void
+    """)
+    owner.addBridge("patch_jamAutoplayLimit", listOf("I"), "V", 3, body = """
+        iget-object v0, p0, ${abi.limiter}
+        ${invokeKind(abi.setLimit)} {v0, p1}, ${abi.setLimit}
+        return-void
+    """)
+    owner.addBridge("patch_jamRefreshAutoplayUi", emptyList(), "V", 1, body = """
+        ${invokeKind(abi.refresh)} {p0}, ${owner.type}->$name()V
+        return-void
+    """)
+}

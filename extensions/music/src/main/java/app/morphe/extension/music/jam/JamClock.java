@@ -103,7 +103,15 @@ public final class JamClock {
     static long position(){return sample==null?0:JamTime.position(sample.optLong("position"),sample.optLong("duration"),sample.optDouble("speed",1),sample.optBoolean("playing"),SystemClock.elapsedRealtime()-received);}
     public static Object model(Object view,Object local){if(!(view instanceof Bar))return local;Bar bar=(Bar)view;bars.put(bar,local);return sample==null?local:bar.patch_jamModel(position(),sample.optLong("duration"));}
     private static final Runnable tick=new Runnable(){public void run(){if(sample==null){ticking=false;return;}for(Bar bar:new ArrayList<>(bars.keySet()))try{bar.patch_jamClock(position(),sample.optLong("duration"));}catch(Exception ignored){}JamUi.main.postDelayed(this,200);}};
-    static void clear(){sample=null;stream="";sequence=-1;for(Map.Entry<Bar,Object> e:new ArrayList<>(bars.entrySet()))try{e.getKey().patch_jamRestore(e.getValue());}catch(Exception ignored){}bars.clear();}
+    static void clear(){
+        boolean wasMirroring=sample!=null;
+        sample=null;stream="";sequence=-1;
+        if(wasMirroring)for(Map.Entry<Bar,Object> e:new ArrayList<>(bars.entrySet()))
+            try{e.getKey().patch_jamRestore(e.getValue());}catch(Exception ignored){}
+        // Idle polls must not forget existing time bars. A paused guest can join
+        // without another native model callback; the host clock still needs to
+        // update that bar. Weak keys release detached views without a session reset.
+    }
     public static boolean offerSeek(long target){
         if(!JamMirror.active())return false;if(sample==null)return true;
         long duration=sample.optLong("duration");if(duration<=0)return true;long at=Math.max(0,Math.min(duration-1,target));String video=sample.optString("videoId");
