@@ -17,6 +17,10 @@ Second \"item\" text"</string>
 <resources>
     <string name="morphe_music_jam_probe_title">Jam queue sharing</string>
     <string name="morphe_music_jam_probe_summary">Host or join a nearby Jam and edit its queue through Jam Layer.</string>
+    <string name="morphe_music_jam_enabled_title">Enable Jam queue sharing</string>
+    <string name="morphe_music_jam_enabled_summary">Enables the Jam integration after YouTube Music restarts.</string>
+    <string name="morphe_music_jam_download_title">Download Jam Layer to get working</string>
+    <string name="morphe_music_jam_download_summary">Open the latest Jam Layer release in your browser.</string>
     <string name="morphe_music_jam_controls_title">Jam controls</string>
     <string name="morphe_music_jam_controls_summary">Host or join a nearby Jam and manage the session.</string>
     <string name="morphe_music_jam_companion_package_title">Jam Layer package</string>

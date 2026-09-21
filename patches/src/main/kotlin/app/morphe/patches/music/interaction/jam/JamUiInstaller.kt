@@ -4,11 +4,11 @@ import app.morphe.patcher.extensions.InstructionExtensions.addInstructions
 import app.morphe.patcher.extensions.InstructionExtensions.instructions
 import app.morphe.patcher.extensions.InstructionExtensions.replaceInstruction
 import app.morphe.patcher.methodCall
-import app.morphe.util.matchAllMethodIndicesForEach
-import app.morphe.util.indexOfFirstInstructionOrThrow
-import app.morphe.util.findInstructionIndicesReversedOrThrow
 import app.morphe.patcher.patch.BytecodePatchContext
+import app.morphe.util.findInstructionIndicesReversedOrThrow
 import app.morphe.util.getMutableMethod
+import app.morphe.util.indexOfFirstInstructionOrThrow
+import app.morphe.util.matchAllMethodIndicesForEach
 import com.android.tools.smali.dexlib2.AccessFlags
 import com.android.tools.smali.dexlib2.Opcode
 import com.android.tools.smali.dexlib2.iface.Method
@@ -43,14 +43,18 @@ internal fun BytecodePatchContext.installJamUiBridges(ui: JamUiAbi, queue: JamQu
 
 private fun BytecodePatchContext.installClock(clock: ClockAbi) {
     val mediaState = clock.mediaState.getMutableMethod()
-    val stateCall = mediaState.indexOfFirstInstructionOrThrow(methodCall(
-        "Landroid/media/session/MediaSession;->setPlaybackState(Landroid/media/session/PlaybackState;)V"
-    ))
-    val receiver = when (val instruction = mediaState.instructions[stateCall]) {
-        is FiveRegisterInstruction -> instruction.registerC
-        is RegisterRangeInstruction -> instruction.startRegister
-        else -> error("Unsupported Jam MediaSession state invocation")
-    }
+    val stateCall =
+        mediaState.indexOfFirstInstructionOrThrow(
+            methodCall(
+                "Landroid/media/session/MediaSession;->setPlaybackState(Landroid/media/session/PlaybackState;)V"
+            )
+        )
+    val receiver =
+        when (val instruction = mediaState.instructions[stateCall]) {
+            is FiveRegisterInstruction -> instruction.registerC
+            is RegisterRangeInstruction -> instruction.startRegister
+            else -> error("Unsupported Jam MediaSession state invocation")
+        }
     mediaState.addInstructions(
         stateCall + 1,
         "invoke-static/range {v$receiver .. v$receiver}, $CLOCK->capture(Landroid/media/session/MediaSession;)V",
@@ -82,7 +86,8 @@ private fun BytecodePatchContext.installClock(clock: ClockAbi) {
         listOf("J", "J", "I", "Z"),
         "Ljava/lang/Object;",
         8,
-        body = """
+        body =
+            """
             new-instance v0, ${clock.concreteModelType}
             invoke-direct {v0}, ${clock.concreteModelType}-><init>()V
             iput-wide p1, v0, ${clock.position}
@@ -99,7 +104,8 @@ private fun BytecodePatchContext.installClock(clock: ClockAbi) {
         listOf("Ljava/lang/Object;"),
         "V",
         2,
-        body = """
+        body =
+            """
             check-cast p1, ${clock.modelType}
             ${invokeKind(clock.setModel)} {p0, p1}, $setModel
             invoke-virtual {p0}, Landroid/view/View;->invalidate()V
@@ -155,7 +161,8 @@ private fun BytecodePatchContext.installPalette(palette: PaletteAbi) {
         listOf("Landroid/graphics/Bitmap;"),
         "Ljava/lang/Object;",
         3,
-        body = """
+        body =
+            """
             iget-object v0, p0, ${palette.extractor}
             ${invokeKind(palette.extract)} {v0, p1}, ${palette.extract}
             move-result-object v0
@@ -167,7 +174,8 @@ private fun BytecodePatchContext.installPalette(palette: PaletteAbi) {
         listOf("Ljava/lang/Object;"),
         "V",
         3,
-        body = """
+        body =
+            """
             check-cast p1, ${palette.extract.returnType}
             iget-object v0, p0, ${palette.publisher}
             ${invokeKind(palette.publish)} {v0, p1}, ${palette.publish}
@@ -209,7 +217,8 @@ private fun BytecodePatchContext.installPlayback(playback: PlaybackAbi) {
             "V",
             3,
             accessFlags = AccessFlags.PUBLIC.value,
-            body = """
+            body =
+                """
                 check-cast p1, ${playback.command.type}
                 check-cast p2, Ljava/util/Map;
                 ${invokeKind(router.dispatch)} {p0, p1, p2}, $dispatch
@@ -222,7 +231,9 @@ private fun BytecodePatchContext.installPlayback(playback: PlaybackAbi) {
             "V",
             4,
             accessFlags = AccessFlags.PUBLIC.value,
-            body = playback.command.decode("p1", "v0") + """
+            body =
+                playback.command.decode("p1", "v0") +
+                    """
                 invoke-static {}, Ljava/util/Collections;->emptyMap()Ljava/util/Map;
                 move-result-object v1
                 ${invokeKind(router.dispatch)} {p0, v0, v1}, $dispatch
@@ -268,7 +279,8 @@ private fun BytecodePatchContext.installNowPlaying(now: NowPlayingAbi, item: Que
         emptyList(),
         "V",
         2,
-        body = """
+        body =
+            """
             const/4 v0, 0x0
             ${invokeKind(now.presenter.entry)} {p0, v0}, $entry
             return-void
@@ -280,38 +292,52 @@ private fun BytecodePatchContext.installNowPlaying(now: NowPlayingAbi, item: Que
         val call = instructions[index] as ReferenceInstruction
         val receiver = call.invokeRegister(0) ?: error("Missing player text receiver")
         val text = call.invokeRegister(1) ?: error("Missing player text argument")
-        val target = "Lapp/morphe/extension/music/jam/JamMetadata;->setText(Landroid/widget/TextView;Ljava/lang/CharSequence;)V"
-        replaceInstruction(index, if (call is RegisterRangeInstruction) {
-            "invoke-static/range {v$receiver .. v$text}, $target"
-        } else {
-            "invoke-static {v$receiver, v$text}, $target"
-        })
+        val target =
+            "Lapp/morphe/extension/music/jam/JamMetadata;->setText(Landroid/widget/TextView;Ljava/lang/CharSequence;)V"
+        replaceInstruction(
+            index,
+            if (call is RegisterRangeInstruction) {
+                "invoke-static/range {v$receiver .. v$text}, $target"
+            } else {
+                "invoke-static {v$receiver, v$text}, $target"
+            },
+        )
     }
     now.queueBindings.forEach { binding ->
         val owner = mutableClassDefBy(binding.type)
         owner.interfaces.add(NOW_ACCESS)
         val bindingMethod = binding.entry.getMutableMethod()
         val instructions = bindingMethod.instructions.toList()
-        bindingMethod.findInstructionIndicesReversedOrThrow(methodCall(reference = binding.itemLookup)).forEach { index ->
-            val result = instructions.getOrNull(index + 1) as? OneRegisterInstruction
-                ?: error("Unable to resolve Jam queue item lookup result register")
-            require(instructions.getOrNull(index + 1)?.opcode == Opcode.MOVE_RESULT_OBJECT) {
-                "Unable to resolve Jam queue item lookup result"
-            }
-            val register = result.registerA
-            bindingMethod.addInstructions(index + 2, """
+        bindingMethod
+            .findInstructionIndicesReversedOrThrow(methodCall(reference = binding.itemLookup))
+            .forEach { index ->
+                val result =
+                    instructions.getOrNull(index + 1) as? OneRegisterInstruction
+                        ?: error("Unable to resolve Jam queue item lookup result register")
+                require(instructions.getOrNull(index + 1)?.opcode == Opcode.MOVE_RESULT_OBJECT) {
+                    "Unable to resolve Jam queue item lookup result"
+                }
+                val register = result.registerA
+                bindingMethod.addInstructions(
+                    index + 2,
+                    """
                 invoke-static/range {v$register .. v$register}, $PLAYBACK->chooseItem(Ljava/lang/Object;)Ljava/lang/Object;
                 move-result-object v$register
                 check-cast v$register, ${item.videoId.definingClass}
-            """)
-        }
-        bindingMethod.addInstructions(0, "invoke-static/range {p0 .. p0}, $PLAYBACK->observe($NOW_ACCESS)V")
+            """,
+                )
+            }
+        bindingMethod.addInstructions(
+            0,
+            "invoke-static/range {p0 .. p0}, $PLAYBACK->observe($NOW_ACCESS)V",
+        )
         owner.addBridge(
             "patch_jamRefreshNow",
             emptyList(),
             "V",
             1,
-            body = """
+            body =
+                """
                 ${invokeKind(binding.refresh)} {p0}, ${binding.refresh}
                 return-void
             """,
@@ -349,7 +375,8 @@ private fun BytecodePatchContext.installQueueRow(row: QueueRowAbi, item: QueueIt
         emptyList(),
         "Ljava/lang/Object;",
         2,
-        body = """
+        body =
+            """
             iget-object v0, p0, ${row.item}
             return-object v0
         """,
@@ -359,7 +386,8 @@ private fun BytecodePatchContext.installQueueRow(row: QueueRowAbi, item: QueueIt
         listOf("Landroid/view/View;", "Ljava/lang/Object;"),
         "V",
         7,
-        body = """
+        body =
+            """
             move-object v0, p2
             check-cast v0, ${item.metadataType}
             ${invokeKind(row.menuAccessor)} {v0}, ${row.menuAccessor}
@@ -438,17 +466,19 @@ private fun BytecodePatchContext.installButton(button: ButtonAbi) {
     )
 }
 
-private fun ReferenceInstruction.invokeRegister(index: Int): Int? = when (this) {
-    is FiveRegisterInstruction -> listOf(registerC, registerD, registerE, registerF, registerG)
-        .take(registerCount).getOrNull(index)
-    is RegisterRangeInstruction -> (startRegister + index).takeIf { index < registerCount }
-    else -> null
-}
+private fun ReferenceInstruction.invokeRegister(index: Int): Int? =
+    when (this) {
+        is FiveRegisterInstruction ->
+            listOf(registerC, registerD, registerE, registerF, registerG)
+                .take(registerCount)
+                .getOrNull(index)
+        is RegisterRangeInstruction -> (startRegister + index).takeIf { index < registerCount }
+        else -> null
+    }
 
 private fun Method.parameters(): List<String> = parameterTypes.map { it.toString() }
 
 private fun MethodReference.parameters(): List<String> = parameterTypes.map { it.toString() }
-
 
 private fun BytecodePatchContext.installAutoplayUi(abi: AutoplayUiAbi) {
     val extension = "Lapp/morphe/extension/music/jam/JamMirror;"
@@ -458,18 +488,39 @@ private fun BytecodePatchContext.installAutoplayUi(abi: AutoplayUiAbi) {
     val refresh = abi.refresh.getMutableMethod()
     val name = refresh.name
     refresh.setName("patch_jamLocalAutoplayUi")
-    owner.addBridge(name, emptyList(), "V", 1, refresh.accessFlags, """
+    owner.addBridge(
+        name,
+        emptyList(),
+        "V",
+        1,
+        refresh.accessFlags,
+        """
         ${invokeKind(abi.refresh)} {p0}, $refresh
         invoke-static {p0}, $extension->autoplayUi($contract)V
         return-void
-    """)
-    owner.addBridge("patch_jamAutoplayLimit", listOf("I"), "V", 3, body = """
+    """,
+    )
+    owner.addBridge(
+        "patch_jamAutoplayLimit",
+        listOf("I"),
+        "V",
+        3,
+        body =
+            """
         iget-object v0, p0, ${abi.limiter}
         ${invokeKind(abi.setLimit)} {v0, p1}, ${abi.setLimit}
         return-void
-    """)
-    owner.addBridge("patch_jamRefreshAutoplayUi", emptyList(), "V", 1, body = """
+    """,
+    )
+    owner.addBridge(
+        "patch_jamRefreshAutoplayUi",
+        emptyList(),
+        "V",
+        1,
+        body =
+            """
         ${invokeKind(abi.refresh)} {p0}, ${owner.type}->$name()V
         return-void
-    """)
+    """,
+    )
 }

@@ -4,8 +4,8 @@ import app.morphe.patcher.extensions.InstructionExtensions.addInstructions
 import app.morphe.patcher.patch.BytecodePatchContext
 import app.morphe.patcher.util.proxy.mutableTypes.MutableClass
 import app.morphe.util.cloneMutable
-import app.morphe.util.getMutableMethod
 import app.morphe.util.findInstructionIndicesReversedOrThrow
+import app.morphe.util.getMutableMethod
 import app.morphe.util.numberOfParameterRegisters
 import com.android.tools.smali.dexlib2.Opcode
 import com.android.tools.smali.dexlib2.iface.Method
@@ -59,7 +59,9 @@ private fun BytecodePatchContext.installQueueAccess(queue: JamQueueAbi) {
         listOf("[B"),
         "V",
         4,
-        body = queue.command.decode("p1", "v0") + """
+        body =
+            queue.command.decode("p1", "v0") +
+                """
             ${invokeKind(queue.enqueue)} {p0, v0}, $enqueue
             return-void
         """,
@@ -74,16 +76,14 @@ private fun BytecodePatchContext.installQueueAccess(queue: JamQueueAbi) {
     installQueueSelection(queue)
 }
 
-private fun BytecodePatchContext.installQueueSnapshots(
-    manager: MutableClass,
-    queue: JamQueueAbi,
-) {
+private fun BytecodePatchContext.installQueueSnapshots(manager: MutableClass, queue: JamQueueAbi) {
     manager.addBridge(
         "patch_jamLaneItems",
         listOf("I"),
         "[Ljava/lang/Object;",
         3,
-        body = """
+        body =
+            """
             iget-object v0, p0, ${queue.storage.field}
             ${invokeKind(queue.storage.items)} {v0, p1}, ${queue.storage.items}
             move-result-object v0
@@ -92,13 +92,19 @@ private fun BytecodePatchContext.installQueueSnapshots(
             return-object v0
         """,
     )
-    installNativeAccessor(manager, "patch_jamCurrent", queue.storage.currentIndex, receiverField = queue.storage.field)
+    installNativeAccessor(
+        manager,
+        "patch_jamCurrent",
+        queue.storage.currentIndex,
+        receiverField = queue.storage.field,
+    )
     manager.addBridge(
         "patch_jamLocal",
         emptyList(),
         "Z",
         3,
-        body = """
+        body =
+            """
             iget-object v0, p0, ${queue.storage.field}
             ${invokeKind(queue.storage.mode)} {v0}, ${queue.storage.mode}
             move-result-object v0
@@ -122,17 +128,16 @@ private fun BytecodePatchContext.installQueueItemMetadata(
     installNativeAccessor(manager, "patch_jamItemId", item.persistentId, opaqueReceiver = true)
 }
 
-private fun BytecodePatchContext.installQueueCreation(
-    manager: MutableClass,
-    queue: JamQueueAbi,
-) {
+private fun BytecodePatchContext.installQueueCreation(manager: MutableClass, queue: JamQueueAbi) {
     val item = queue.item
     manager.addBridge(
         "patch_jamCreateItem",
         listOf("[B", "J"),
         "Ljava/lang/Object;",
         8,
-        body = item.itemProto.decode("p1", "v1") + """
+        body =
+            item.itemProto.decode("p1", "v1") +
+                """
             iget-object v3, p0, ${item.factory}
             new-instance v0, ${item.createItem.type}
             invoke-direct {v0, p2, p3, v1, v3}, ${item.createItem.type}-><init>(J${item.itemProto.type}${item.factory.type})V
@@ -148,9 +153,9 @@ private fun BytecodePatchContext.installQueueDisplayAccess(
 ) {
     installDisplayAccess(manager, displays.primary, storage, "DisplayedList", "Display")
     installDisplayAccess(manager, displays.autoplay, storage, "DisplayedAutoplay", "Autoplay")
-    listOf(displays.primary, displays.autoplay).distinctBy { it.type }.forEach { display ->
-        installDisplayInterception(display)
-    }
+    listOf(displays.primary, displays.autoplay)
+        .distinctBy { it.type }
+        .forEach { display -> installDisplayInterception(display) }
 }
 
 private fun BytecodePatchContext.installDisplayAccess(
@@ -165,7 +170,8 @@ private fun BytecodePatchContext.installDisplayAccess(
         emptyList(),
         "Ljava/lang/Object;",
         2,
-        body = """
+        body =
+            """
             iget-object v0, p0, ${display.managerField}
             iget-object v0, v0, ${display.list}
             return-object v0
@@ -176,7 +182,8 @@ private fun BytecodePatchContext.installDisplayAccess(
         listOf("Ljava/lang/Object;"),
         "V",
         4,
-        body = """
+        body =
+            """
             iget-object v0, p0, ${display.managerField}
             iget-object v1, v0, ${display.list}
             if-eqz v1, :set
@@ -194,7 +201,8 @@ private fun BytecodePatchContext.installDisplayAccess(
         emptyList(),
         "V",
         2,
-        body = """
+        body =
+            """
             iget-object v0, p0, ${display.managerField}
             ${invokeKind(display.refresh)} {v0}, ${display.refresh}
             return-void
@@ -206,7 +214,8 @@ private fun BytecodePatchContext.installDisplayAccess(
             listOf("Ljava/lang/Runnable;"),
             "V",
             3,
-            body = """
+            body =
+                """
                 iget-object v0, p0, ${display.managerField}
                 iget-object v0, v0, ${display.handler}
                 invoke-virtual {v0, p1}, Landroid/os/Handler;->post(Ljava/lang/Runnable;)Z
@@ -263,10 +272,7 @@ private fun BytecodePatchContext.installDisplayInterception(display: QueueDispla
     )
 }
 
-private fun BytecodePatchContext.installQueueOperations(
-    manager: MutableClass,
-    queue: JamQueueAbi,
-) {
+private fun BytecodePatchContext.installQueueOperations(manager: MutableClass, queue: JamQueueAbi) {
     val remove = queue.remove.getMutableMethod()
     val removeName = remove.name
     remove.setName("patch_jamLocalRemove")
@@ -290,7 +296,8 @@ private fun BytecodePatchContext.installQueueOperations(
         listOf("Ljava/lang/Object;"),
         "V",
         2,
-        body = """
+        body =
+            """
             check-cast p1, ${queue.item.type}
             ${invokeKind(queue.remove)} {p0, p1}, $remove
             return-void
@@ -301,7 +308,8 @@ private fun BytecodePatchContext.installQueueOperations(
         listOf("I", "I", "I"),
         "V",
         5,
-        body = """
+        body =
+            """
             iget-object v0, p0, ${queue.storage.field}
             ${invokeKind(queue.storage.lane)} {v0, p1}, ${queue.storage.lane}
             move-result-object v0
@@ -315,7 +323,8 @@ private fun BytecodePatchContext.installQueueOperations(
         listOf("Ljava/lang/Object;", "Ljava/lang/Object;"),
         "V",
         4,
-        body = """
+        body =
+            """
             check-cast p1, $comparable
             check-cast p2, $comparable
             iget-object v0, p0, ${queue.mutation.provider}
@@ -328,16 +337,15 @@ private fun BytecodePatchContext.installQueueOperations(
     )
 }
 
-private fun BytecodePatchContext.installQueueMenu(
-    manager: MutableClass,
-    queue: JamQueueAbi,
-) {
+private fun BytecodePatchContext.installQueueMenu(manager: MutableClass, queue: JamQueueAbi) {
     manager.addBridge(
         "patch_jamRequestMenu",
         listOf("[B"),
         "Ljava/util/concurrent/Future;",
         5,
-        body = queue.command.decode("p1", "v0") + """
+        body =
+            queue.command.decode("p1", "v0") +
+                """
             iget-object v1, p0, ${queue.menu.dispatcher}
             invoke-virtual {p0}, ${manager.type}->patch_jamExecutor()Ljava/util/concurrent/Executor;
             move-result-object v2
@@ -351,7 +359,8 @@ private fun BytecodePatchContext.installQueueMenu(
         listOf("Ljava/lang/Object;"),
         "[Ljava/lang/Object;",
         2,
-        body = """
+        body =
+            """
             check-cast p1, ${queue.menu.responseType}
             iget-object p1, p1, ${queue.menu.responseItems}
             invoke-interface {p1}, Ljava/util/List;->toArray()[Ljava/lang/Object;
@@ -388,7 +397,10 @@ private fun BytecodePatchContext.installQueueCallback(queue: JamQueueAbi) {
     val callback = mutableClassDefBy(queue.callback.type)
     val constructor = queue.callback.constructor.getMutableMethod()
     constructor.findInstructionIndicesReversedOrThrow(Opcode.RETURN_VOID).forEach { index ->
-        constructor.addInstructions(index, "invoke-static {p0}, $JAM_COMPLETION->attach(Ljava/lang/Object;)V")
+        constructor.addInstructions(
+            index,
+            "invoke-static {p0}, $JAM_COMPLETION->attach(Ljava/lang/Object;)V",
+        )
     }
     installCallbackBridge(callback, queue.callback.success, queue, true)
     installCallbackBridge(callback, queue.callback.failure, queue, false)
@@ -403,12 +415,16 @@ private fun BytecodePatchContext.installCallbackBridge(
     val native = reference.getMutableMethod()
     val name = native.name
     native.setName(if (succeeds) "patch_jamLocalSuccess" else "patch_jamLocalFailure")
-    val completion = if (succeeds) """
+    val completion =
+        if (succeeds)
+            """
         check-cast p1, ${queue.callback.responseType}
         iget-object v0, p1, ${queue.callback.responseItems}
         iget-object v1, p0, ${queue.callback.manager}
         invoke-static {p0, v0, v1}, $JAM_COMPLETION->succeeded(Ljava/lang/Object;Ljava/util/List;$ACCESS)V
-    """ else """
+    """
+        else
+            """
         invoke-static {p0}, $JAM_COMPLETION->failed(Ljava/lang/Object;)V
     """
     callback.addBridge(
@@ -433,7 +449,8 @@ private fun BytecodePatchContext.installNativeQueueListAdapter(storage: QueueSto
         listOf("I", "I"),
         "V",
         3,
-        body = """
+        body =
+            """
             invoke-virtual {p0, p1, p2}, $NATIVE_LIST->move(II)V
             return-void
         """,
@@ -443,7 +460,8 @@ private fun BytecodePatchContext.installNativeQueueListAdapter(storage: QueueSto
         listOf(storage.listenerType),
         "V",
         2,
-        body = """
+        body =
+            """
             invoke-virtual {p0, p1}, $NATIVE_LIST->addListener(Ljava/lang/Object;)V
             return-void
         """,
@@ -453,7 +471,8 @@ private fun BytecodePatchContext.installNativeQueueListAdapter(storage: QueueSto
         listOf(storage.listenerType),
         "V",
         2,
-        body = """
+        body =
+            """
             invoke-virtual {p0, p1}, $NATIVE_LIST->removeListener(Ljava/lang/Object;)V
             return-void
         """,
@@ -461,14 +480,14 @@ private fun BytecodePatchContext.installNativeQueueListAdapter(storage: QueueSto
 }
 
 private fun BytecodePatchContext.installQueueItemAccess(item: QueueItemAbi) {
-    val menuPayload = requireNotNull(item.menuPayload) {
-        "Unable to install Jam queue-item menu payload bridge"
-    }
+    val menuPayload =
+        requireNotNull(item.menuPayload) { "Unable to install Jam queue-item menu payload bridge" }
     val metadataAccess = "Lapp/morphe/extension/music/jam/YtmBridge\$MetadataAccess;"
     concreteImplementationsOf(item.metadataType).forEach { implementation ->
         val metadata = mutableClassDefBy(implementation.type)
         metadata.interfaces.add(metadataAccess)
-        listOf("patch_jamTitle" to item.title, "patch_jamArtist" to item.artist).forEach { (name, accessor) ->
+        listOf("patch_jamTitle" to item.title, "patch_jamArtist" to item.artist).forEach {
+            (name, accessor) ->
             installNativeAccessor(metadata, name, accessor)
         }
     }
@@ -478,13 +497,19 @@ private fun BytecodePatchContext.installQueueItemAccess(item: QueueItemAbi) {
             "Jam queue item ${nativeItem.type} cannot provide the resolved menu payload"
         }
         nativeItem.interfaces.add(ITEM_ACCESS)
-        installNativeAccessor(nativeItem, "patch_jamArtwork", item.artwork, resultType = "Ljava/lang/Object;")
+        installNativeAccessor(
+            nativeItem,
+            "patch_jamArtwork",
+            item.artwork,
+            resultType = "Ljava/lang/Object;",
+        )
         nativeItem.addBridge(
             "patch_jamMenuPayload",
             emptyList(),
             "Ljava/lang/Object;",
             1,
-            body = """
+            body =
+                """
                 check-cast p0, ${menuPayload.type}
                 return-object p0
             """,
@@ -497,7 +522,8 @@ private fun BytecodePatchContext.installQueueItemAccess(item: QueueItemAbi) {
         emptyList(),
         "[Ljava/lang/Object;",
         2,
-        body = """
+        body =
+            """
             iget-object v0, p0, ${item.artworkList}
             invoke-interface {v0}, Ljava/util/List;->toArray()[Ljava/lang/Object;
             move-result-object v0
@@ -512,17 +538,13 @@ private fun BytecodePatchContext.installQueueItemAccess(item: QueueItemAbi) {
 private fun BytecodePatchContext.installQueueManagerCapture(queue: JamQueueAbi) {
     val original = queue.constructor.getMutableMethod()
     val preservedThisRegister = requireNotNull(original.implementation).registerCount
-    val constructor = original.cloneMutable(
-        additionalRegisters = original.numberOfParameterRegisters + 1,
-    )
+    val constructor =
+        original.cloneMutable(additionalRegisters = original.numberOfParameterRegisters + 1)
     mutableClassDefBy(original.definingClass).methods.apply {
         remove(original)
         add(constructor)
     }
-    constructor.addInstructions(
-        0,
-        "move-object/from16 v$preservedThisRegister, p0",
-    )
+    constructor.addInstructions(0, "move-object/from16 v$preservedThisRegister, p0")
     constructor.findInstructionIndicesReversedOrThrow(Opcode.RETURN_VOID).forEach { index ->
         constructor.addInstructions(
             index,

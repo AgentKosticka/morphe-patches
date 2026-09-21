@@ -7,12 +7,14 @@ import android.util.AttributeSet;
 /** Player-settings entry for selecting the approved local Jam Layer package. */
 @SuppressWarnings("deprecation")
 public final class JamCompanionPackagePreference extends Preference {
-    public JamCompanionPackagePreference(Context context, AttributeSet attrs) {
-        super(context, attrs);
-        setPersistent(false);
-    }
 
-    @Override protected void onClick() {
-        JamUi.configureCompanion(getContext());
-    }
+  public JamCompanionPackagePreference(Context context, AttributeSet attrs) {
+    super(context, attrs);
+    setPersistent(false);
+  }
+
+  @Override
+  protected void onClick() {
+    JamUi.configureCompanion(getContext());
+  }
 }

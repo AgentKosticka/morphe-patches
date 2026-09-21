@@ -1,23 +1,19 @@
 package app.morphe.patches.music.interaction.jam
 
-import app.morphe.patcher.extensions.InstructionExtensions.instructionsOrNull
-import app.morphe.patcher.patch.BytecodePatchContext
+import app.morphe.patcher.extensions.InstructionExtensions.getInstruction
 import app.morphe.patcher.fieldAccess
 import app.morphe.patcher.methodCall
-import app.morphe.util.getMutableMethod
+import app.morphe.patcher.patch.BytecodePatchContext
 import app.morphe.util.findInstructionIndicesReversed
-import app.morphe.patcher.extensions.InstructionExtensions.getInstruction
 import app.morphe.util.findInstructionIndicesReversedOrThrow
-import app.morphe.util.p0Register
-import com.android.tools.smali.dexlib2.iface.instruction.TwoRegisterInstruction
 import app.morphe.util.getReference
 import app.morphe.util.matchSingle
-import com.android.tools.smali.dexlib2.util.MethodUtil
+import app.morphe.util.p0Register
 import com.android.tools.smali.dexlib2.AccessFlags
 import com.android.tools.smali.dexlib2.Opcode
 import com.android.tools.smali.dexlib2.iface.ClassDef
 import com.android.tools.smali.dexlib2.iface.Method
-import com.android.tools.smali.dexlib2.iface.instruction.ReferenceInstruction
+import com.android.tools.smali.dexlib2.iface.instruction.TwoRegisterInstruction
 import com.android.tools.smali.dexlib2.iface.reference.FieldReference
 import com.android.tools.smali.dexlib2.iface.reference.MethodReference
 
@@ -70,20 +66,11 @@ internal data class PaletteAbi(
     val localPublish: MethodReference,
 )
 
-internal data class PlaybackAbi(
-    val command: ProtoAbi,
-    val routers: List<PlaybackRouterAbi>,
-)
+internal data class PlaybackAbi(val command: ProtoAbi, val routers: List<PlaybackRouterAbi>)
 
-internal data class PlaybackRouterAbi(
-    val type: String,
-    val dispatch: MethodReference,
-)
+internal data class PlaybackRouterAbi(val type: String, val dispatch: MethodReference)
 
-internal data class CurrentItemAbi(
-    val type: String,
-    val accessor: MethodReference,
-)
+internal data class CurrentItemAbi(val type: String, val accessor: MethodReference)
 
 internal data class NowPlayingAbi(
     val presenter: NowPlayingPresenterAbi,
@@ -91,10 +78,7 @@ internal data class NowPlayingAbi(
     val queueBindings: List<QueueBindingAbi>,
 )
 
-internal data class NowPlayingPresenterAbi(
-    val type: String,
-    val entry: MethodReference,
-)
+internal data class NowPlayingPresenterAbi(val type: String, val entry: MethodReference)
 
 internal data class QueueBindingAbi(
     val type: String,
@@ -122,12 +106,11 @@ internal data class QueueRowAbi(
     val menuDispatch: MethodReference,
 )
 
-internal data class ButtonAbi(
-    val type: String,
-    val click: MethodReference,
-)
+internal data class ButtonAbi(val type: String, val click: MethodReference)
 
-/** Resolves presentation hooks from queue and platform relationships, never host obfuscation names. */
+/**
+ * Resolves presentation hooks from queue and platform relationships, never host obfuscation names.
+ */
 internal fun BytecodePatchContext.resolveJamUiAbi(queue: JamQueueAbi): JamUiAbi {
     val clock = resolveClock()
     val palette = resolvePalette()
@@ -137,7 +120,17 @@ internal fun BytecodePatchContext.resolveJamUiAbi(queue: JamQueueAbi): JamUiAbi 
     val nowPlaying = resolveNowPlaying(currentItem, queue.item)
     val queueRow = resolveQueueRow(queue.item, nowPlaying.menuEntry)
     val buttons = resolveButtons()
-    return JamUiAbi(clock, palette, playback, currentItem, nowPlaying, artwork, queueRow, buttons, resolveAutoplayUi(queue))
+    return JamUiAbi(
+        clock,
+        palette,
+        playback,
+        currentItem,
+        nowPlaying,
+        artwork,
+        queueRow,
+        buttons,
+        resolveAutoplayUi(queue),
+    )
 }
 
 private fun BytecodePatchContext.resolveClock(): ClockAbi {
@@ -150,24 +143,47 @@ private fun BytecodePatchContext.resolveClock(): ClockAbi {
     val modelMatch = clockMutableModelFingerprint(model.type).matchSingle()
     val concrete = modelMatch.originalClassDef to modelMatch.originalMethod
     val setter = concrete.second
-    val writes = setter.findInstructionIndicesReversedOrThrow(
-        fieldAccess(definingClass = concrete.first.type, type = "J", opcode = Opcode.IPUT_WIDE)
-    )
+    val writes =
+        setter.findInstructionIndicesReversedOrThrow(
+            fieldAccess(definingClass = concrete.first.type, type = "J", opcode = Opcode.IPUT_WIDE)
+        )
     fun timestamp(parameterRegister: Int): FieldReference {
-        val write = writes.filter { setter.getInstruction<TwoRegisterInstruction>(it).registerA == setter.p0Register + parameterRegister }
-            .singleOrNull() ?: error("Missing or ambiguous â€“ Jam clock timestamp parameter p$parameterRegister")
+        val write =
+            writes
+                .filter {
+                    setter.getInstruction<TwoRegisterInstruction>(it).registerA ==
+                        setter.p0Register + parameterRegister
+                }
+                .singleOrNull()
+                ?: error(
+                    "Missing or ambiguous â€“ Jam clock timestamp parameter p$parameterRegister"
+                )
         return requireNotNull(setter.getInstruction(write).getReference<FieldReference>())
     }
     val colorBinding = clockOverrideColorsFingerprint(timeBar.type, model.type).matchSingle()
-    val overrideColors = listOf(2, 4).map { index ->
-        val accessor = colorBinding.instructionMatches[index].instruction.getReference<MethodReference>()!!
-        clockModelFieldFingerprint(concrete.first.type, accessor).matchSingle().instructionMatches[0].getFieldAccessed()
+    val overrideColors =
+        listOf(2, 4).map { index ->
+            val accessor =
+                colorBinding.instructionMatches[index].instruction.getReference<MethodReference>()!!
+            clockModelFieldFingerprint(concrete.first.type, accessor)
+                .matchSingle()
+                .instructionMatches[0]
+                .getFieldAccessed()
+        }
+    require(overrideColors.distinct().size == 2) {
+        "Jam clock override colors must be distinct fields"
     }
-    require(overrideColors.distinct().size == 2) { "Jam clock override colors must be distinct fields" }
-    val activeGetter = clockLabelEnabledFingerprint(timeBar.type, model.type, dragging)
-        .matchSingle().instructionMatches[0].instruction.getReference<MethodReference>()!!
-    val active = clockModelFieldFingerprint(concrete.first.type, activeGetter)
-        .matchSingle().instructionMatches[0].getFieldAccessed()
+    val activeGetter =
+        clockLabelEnabledFingerprint(timeBar.type, model.type, dragging)
+            .matchSingle()
+            .instructionMatches[0]
+            .instruction
+            .getReference<MethodReference>()!!
+    val active =
+        clockModelFieldFingerprint(concrete.first.type, activeGetter)
+            .matchSingle()
+            .instructionMatches[0]
+            .getFieldAccessed()
     val seek = resolveSeek(timeBar)
     return ClockAbi(
         mediaState,
@@ -187,30 +203,50 @@ private fun BytecodePatchContext.resolveClock(): ClockAbi {
 }
 
 private fun BytecodePatchContext.resolveSeek(timeBar: ClassDef): MethodReference {
-    val controls = timeBarOwnerFingerprint(timeBar.type).matchAll()
-        .map { it.originalClassDef }
-        .distinctBy { it.type }
+    val controls =
+        timeBarOwnerFingerprint(timeBar.type)
+            .matchAll()
+            .map { it.originalClassDef }
+            .distinctBy { it.type }
     val controlInterfaces = controls.flatMap { implementedInterfaces(it.type) }.toSet()
-    require(controlInterfaces.isNotEmpty()) { "Unable to resolve Jam playback-control listener interfaces" }
+    require(controlInterfaces.isNotEmpty()) {
+        "Unable to resolve Jam playback-control listener interfaces"
+    }
     return seekForwarderFingerprint(controlInterfaces).matchSingle().originalMethod
 }
 
 private fun BytecodePatchContext.resolvePalette(): PaletteAbi {
-    val candidates = PalettePublicationFingerprint.matchAll().mapNotNull { match ->
-        val source = match.originalClassDef
-        val publish = match.instructionMatches[0].instruction.getReference<MethodReference>()!!
-        val local = match.instructionMatches[1].instruction.getReference<MethodReference>()!!
-        val extractors = paletteExtractorFingerprint(local.parameterTypes[0].toString(), source.fields.map { it.type }.toSet())
-            .matchAll(0..1)
-        if (extractors.isEmpty()) return@mapNotNull null
-        val extract = extractors.single().originalMethod
-        val extractor = source.fields.filter { it.type == extract.definingClass }
-            .singleOrNull() ?: error("Missing or ambiguous â€“ Jam palette extractor field")
-        val publisher = source.fields.filter { it.type == publish.definingClass }
-            .singleOrNull() ?: error("Missing or ambiguous â€“ Jam palette publisher field")
-        PaletteAbi(source.type, match.originalMethod, extractor, extract, publisher, publish, local)
-    }
-    return candidates.singleOrNull() ?: error("Missing or ambiguous â€“ Jam player palette pipeline")
+    val candidates =
+        PalettePublicationFingerprint.matchAll().mapNotNull { match ->
+            val source = match.originalClassDef
+            val publish = match.instructionMatches[0].instruction.getReference<MethodReference>()!!
+            val local = match.instructionMatches[1].instruction.getReference<MethodReference>()!!
+            val extractors =
+                paletteExtractorFingerprint(
+                        local.parameterTypes[0].toString(),
+                        source.fields.map { it.type }.toSet(),
+                    )
+                    .matchAll(0..1)
+            if (extractors.isEmpty()) return@mapNotNull null
+            val extract = extractors.single().originalMethod
+            val extractor =
+                source.fields.filter { it.type == extract.definingClass }.singleOrNull()
+                    ?: error("Missing or ambiguous â€“ Jam palette extractor field")
+            val publisher =
+                source.fields.filter { it.type == publish.definingClass }.singleOrNull()
+                    ?: error("Missing or ambiguous â€“ Jam palette publisher field")
+            PaletteAbi(
+                source.type,
+                match.originalMethod,
+                extractor,
+                extract,
+                publisher,
+                publish,
+                local,
+            )
+        }
+    return candidates.singleOrNull()
+        ?: error("Missing or ambiguous â€“ Jam player palette pipeline")
 }
 
 private fun BytecodePatchContext.resolvePlayback(): PlaybackAbi {
@@ -219,17 +255,18 @@ private fun BytecodePatchContext.resolvePlayback(): PlaybackAbi {
     val peer = classDefBy(anchor.originalMethod.returnType)
     val dispatchMatch = accountRouterDispatchFingerprint(outer.type).matchSingle()
     val outerDispatch = dispatchMatch.originalMethod
-    val forwarder = dispatchMatch.instructionMatches[0].instruction.getReference<MethodReference>()!!
-    require(forwarder.parameterTypes == outerDispatch.parameterTypes) { "Jam router changes endpoint parameters" }
-    val peerDispatch = accountPeerDispatchFingerprint(peer.type, forwarder).matchSingle().originalMethod
+    val forwarder =
+        dispatchMatch.instructionMatches[0].instruction.getReference<MethodReference>()!!
+    require(forwarder.parameterTypes == outerDispatch.parameterTypes) {
+        "Jam router changes endpoint parameters"
+    }
+    val peerDispatch =
+        accountPeerDispatchFingerprint(peer.type, forwarder).matchSingle().originalMethod
     val command = resolveProto(outerDispatch.parameters()[0], "account command-router endpoint")
     fun router(owner: ClassDef, dispatch: Method): PlaybackRouterAbi {
         return PlaybackRouterAbi(owner.type, dispatch)
     }
-    return PlaybackAbi(
-        command,
-        listOf(router(outer, outerDispatch), router(peer, peerDispatch)),
-    )
+    return PlaybackAbi(command, listOf(router(outer, outerDispatch), router(peer, peerDispatch)))
 }
 
 private fun BytecodePatchContext.resolveCurrentItem(): CurrentItemAbi {
@@ -248,21 +285,24 @@ private fun BytecodePatchContext.resolveNowPlaying(
     val menuMatch = nowPlayingMenuEntryFingerprint(current.type, current.accessor).matchSingle()
     val menuEntry = menuMatch.originalMethod
     val presenterMatch = nowPlayingRefreshFingerprint(current.accessor).matchSingle()
-    val presenter = NowPlayingPresenterAbi(
-        presenterMatch.originalClassDef.type,
-        presenterMatch.originalMethod,
-    )
-    val bindings = queueBindingFingerprint(item.videoId.definingClass).matchAll().mapNotNull { match ->
-        val candidate = match.originalClassDef
-        val entry = match.originalMethod
-        run {
-            val lookup = match.instructionMatches[0].instruction.getReference<MethodReference>()!!
-            val ownerTypes = interfaceClosure(candidate.type)
-            val refresh = queuePresenterRefreshFingerprint(ownerTypes, candidate.methods).matchAll(0..1)
-                .singleOrNull()?.originalMethod ?: return@mapNotNull null
-            QueueBindingAbi(candidate.type, entry, lookup, refresh)
+    val presenter =
+        NowPlayingPresenterAbi(presenterMatch.originalClassDef.type, presenterMatch.originalMethod)
+    val bindings =
+        queueBindingFingerprint(item.videoId.definingClass).matchAll().mapNotNull { match ->
+            val candidate = match.originalClassDef
+            val entry = match.originalMethod
+            run {
+                val lookup =
+                    match.instructionMatches[0].instruction.getReference<MethodReference>()!!
+                val ownerTypes = interfaceClosure(candidate.type)
+                val refresh =
+                    queuePresenterRefreshFingerprint(ownerTypes, candidate.methods)
+                        .matchAll(0..1)
+                        .singleOrNull()
+                        ?.originalMethod ?: return@mapNotNull null
+                QueueBindingAbi(candidate.type, entry, lookup, refresh)
+            }
         }
-    }
     require(bindings.isNotEmpty()) { "Unable to resolve Jam queue item binding presenters" }
     return NowPlayingAbi(presenter, menuEntry, bindings)
 }
@@ -282,47 +322,90 @@ private fun BytecodePatchContext.resolveQueueRow(
     val nowPlayingMethod = menuMatch.originalMethod
     val menuDispatch = menuMatch.instructionMatches[0].instruction.getReference<MethodReference>()!!
     val itemTypes = (listOf(item.type) + item.implementations.map { it.type }).distinct()
-    val candidates = itemTypes.flatMap { itemType ->
-        queueRowBindingFingerprint(itemType).matchAllOrNull().orEmpty()
-    }.mapNotNull { match ->
-        val row = match.originalClassDef
-        val bind = match.originalMethod
-        val itemField = match.instructionMatches[0].getFieldAccessed()
-        val root = queueRowRootFingerprint(row.type).matchAll(0..1).singleOrNull()?.originalMethod
-            ?: return@mapNotNull null
-        val click = queueRowLongClickFingerprint(row.type).matchAll(0..1).singleOrNull()?.originalMethod
-            ?: return@mapNotNull null
-        val menuAccessor = queueMenuAccessorFingerprint(item.metadataType, menuDispatch.parameterTypes[0].toString())
-            .matchSingle().originalMethod
-        val menuPayload = nowPlayingMethod.findInstructionIndicesReversed(methodCall(parameters = emptyList(), returnType = menuAccessor.returnType))
-            .map { nowPlayingMethod.getInstruction(it).getReference<MethodReference>()!! }.filter { method ->
-            method.parameters().isEmpty() && method.returnType == menuAccessor.returnType &&
-                classDefByOrNull(method.definingClass)
-                    ?.let { AccessFlags.INTERFACE.isSet(it.accessFlags) } == true &&
-                item.implementations.all { implementation ->
-                    implementsType(implementation.type, method.definingClass)
-                }
-        }.distinctBy { it.toString() }.map {
-            QueueItemMenuPayloadAbi(it.definingClass)
-        }.also { require(it.size <= 1) { "Ambiguous Jam queue menu payload: $it" } }
-            .singleOrNull() ?: return@mapNotNull null
-        val presenter = row.fields.filter { it.type == menuDispatch.definingClass }
-            .also { require(it.size <= 1) { "Ambiguous Jam row presenter in ${row.type}" } }
-            .singleOrNull() ?: return@mapNotNull null
-        val context = row.fields.filter { it.type == menuDispatch.parameters()[3] }
-            .also { require(it.size <= 1) { "Ambiguous Jam row context in ${row.type}" } }
-            .singleOrNull() ?: return@mapNotNull null
-        QueueRowAbi(row.type, itemField, root, bind, click, menuAccessor, presenter, context, menuPayload, menuDispatch)
-    }.distinctBy { it.type to it.bind.toString() }
-    return candidates.singleOrNull() ?: error("Missing or ambiguous â€“ Jam queue row and menu presenter")
+    val candidates =
+        itemTypes
+            .flatMap { itemType -> queueRowBindingFingerprint(itemType).matchAllOrNull().orEmpty() }
+            .mapNotNull { match ->
+                val row = match.originalClassDef
+                val bind = match.originalMethod
+                val itemField = match.instructionMatches[0].getFieldAccessed()
+                val root =
+                    queueRowRootFingerprint(row.type).matchAll(0..1).singleOrNull()?.originalMethod
+                        ?: return@mapNotNull null
+                val click =
+                    queueRowLongClickFingerprint(row.type)
+                        .matchAll(0..1)
+                        .singleOrNull()
+                        ?.originalMethod ?: return@mapNotNull null
+                val menuAccessor =
+                    queueMenuAccessorFingerprint(
+                            item.metadataType,
+                            menuDispatch.parameterTypes[0].toString(),
+                        )
+                        .matchSingle()
+                        .originalMethod
+                val menuPayload =
+                    nowPlayingMethod
+                        .findInstructionIndicesReversed(
+                            methodCall(
+                                parameters = emptyList(),
+                                returnType = menuAccessor.returnType,
+                            )
+                        )
+                        .map {
+                            nowPlayingMethod.getInstruction(it).getReference<MethodReference>()!!
+                        }
+                        .filter { method ->
+                            method.parameters().isEmpty() &&
+                                method.returnType == menuAccessor.returnType &&
+                                classDefByOrNull(method.definingClass)?.let {
+                                    AccessFlags.INTERFACE.isSet(it.accessFlags)
+                                } == true &&
+                                item.implementations.all { implementation ->
+                                    implementsType(implementation.type, method.definingClass)
+                                }
+                        }
+                        .distinctBy { it.toString() }
+                        .map { QueueItemMenuPayloadAbi(it.definingClass) }
+                        .also { require(it.size <= 1) { "Ambiguous Jam queue menu payload: $it" } }
+                        .singleOrNull() ?: return@mapNotNull null
+                val presenter =
+                    row.fields
+                        .filter { it.type == menuDispatch.definingClass }
+                        .also {
+                            require(it.size <= 1) { "Ambiguous Jam row presenter in ${row.type}" }
+                        }
+                        .singleOrNull() ?: return@mapNotNull null
+                val context =
+                    row.fields
+                        .filter { it.type == menuDispatch.parameters()[3] }
+                        .also {
+                            require(it.size <= 1) { "Ambiguous Jam row context in ${row.type}" }
+                        }
+                        .singleOrNull() ?: return@mapNotNull null
+                QueueRowAbi(
+                    row.type,
+                    itemField,
+                    root,
+                    bind,
+                    click,
+                    menuAccessor,
+                    presenter,
+                    context,
+                    menuPayload,
+                    menuDispatch,
+                )
+            }
+            .distinctBy { it.type to it.bind.toString() }
+    return candidates.singleOrNull()
+        ?: error("Missing or ambiguous â€“ Jam queue row and menu presenter")
 }
 
 private fun BytecodePatchContext.resolveButtons(): List<ButtonAbi> {
     val controls = PlaybackControlViewsFingerprint.matchSingle().originalClassDef
-    return (
-        playbackControlsClickFingerprint(controls.type).matchAll() +
-            playbackButtonClickFingerprint(controls.type).matchAll()
-        ).map { match -> ButtonAbi(match.originalClassDef.type, match.originalMethod) }
+    return (playbackControlsClickFingerprint(controls.type).matchAll() +
+            playbackButtonClickFingerprint(controls.type).matchAll())
+        .map { match -> ButtonAbi(match.originalClassDef.type, match.originalMethod) }
         .distinctBy { it.type }
 }
 
@@ -346,14 +429,24 @@ private fun String.isReferenceType(): Boolean = startsWith("L") || startsWith("[
 private fun <T> T?.requireValue(concept: String): T = this ?: error("Unable to resolve $concept")
 
 private fun BytecodePatchContext.resolveAutoplayUi(queue: JamQueueAbi): AutoplayUiAbi {
-    val owner = autoplaySectionOwnerFingerprint(queue.managerType, queue.displays.autoplay.type)
-        .matchSingle().originalClassDef
+    val owner =
+        autoplaySectionOwnerFingerprint(queue.managerType, queue.displays.autoplay.type)
+            .matchSingle()
+            .originalClassDef
     val refresh = autoplaySectionRefreshFingerprint(owner.type).matchSingle()
     val setLimit = refresh.instructionMatches[1].instruction.getReference<MethodReference>()!!
     val method = refresh.originalMethod
-    val limiter = method.findInstructionIndicesReversedOrThrow(
-        fieldAccess(definingClass = owner.type, type = setLimit.definingClass, opcode = Opcode.IGET_OBJECT)
-    ).map { method.getInstruction(it).getReference<FieldReference>()!! }.distinct().singleOrNull()
-        ?: error("Missing or ambiguous Jam autoplay display limiter")
+    val limiter =
+        method
+            .findInstructionIndicesReversedOrThrow(
+                fieldAccess(
+                    definingClass = owner.type,
+                    type = setLimit.definingClass,
+                    opcode = Opcode.IGET_OBJECT,
+                )
+            )
+            .map { method.getInstruction(it).getReference<FieldReference>()!! }
+            .distinct()
+            .singleOrNull() ?: error("Missing or ambiguous Jam autoplay display limiter")
     return AutoplayUiAbi(method, limiter, setLimit)
 }
