@@ -64,9 +64,6 @@ public final class JamUi {
 
   private static ComponentName companionComponent(Context c, String name) {
     String pkg = companionPackage(c);
-    if (
-      !Trust.equal(Trust.COMPANION_CERT, Trust.certificate(c, pkg))
-    ) throw new SecurityException("Unrecognized Jam Layer signer");
     return new ComponentName(pkg, pkg + name);
   }
 
@@ -80,7 +77,7 @@ public final class JamUi {
     AlertDialog dialog = new AlertDialog.Builder(c)
       .setTitle("Jam Layer package")
       .setMessage(
-        "Use an installed companion package. The companion must use the Jam Layer release signing certificate. Pairing requires your approval."
+        "Use an installed companion package. Pairing requires your approval and a local capability token."
       )
       .setView(input)
       .setNegativeButton("Cancel", null)
@@ -261,12 +258,6 @@ public final class JamUi {
     IJamCompanion service,
     JSONObject request
   ) throws Exception {
-    if (
-      !Trust.equal(
-        Trust.COMPANION_CERT,
-        Trust.certificate(context, companionPackage(context))
-      )
-    ) throw new SecurityException("Unrecognized Jam Layer signer");
     JSONObject envelope = BridgeProtocol.advertise(
       new JSONObject(request.toString())
     );
@@ -387,12 +378,6 @@ public final class JamUi {
     Activity a = activity(c);
     if (a == null) return;
     try {
-      if (
-        !Trust.equal(
-          Trust.COMPANION_CERT,
-          Trust.certificate(c, companionPackage(c))
-        )
-      ) throw new SecurityException("Unrecognized Jam Layer signer");
       byte[] bytes = new byte[32];
       new SecureRandom().nextBytes(bytes);
       StringBuilder token = new StringBuilder();

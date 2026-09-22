@@ -65,9 +65,8 @@ The local Binder bridge advertises additive protocol version 1 and capabilities
 `queue-revisions`, `stable-item-ids` and `stale-edit-rejection`. Missing envelopes
 are treated as the original v1 bridge; malformed envelopes, unsupported required
 versions and missing capabilities are rejected. Network framing is unchanged.
-Pairing pins the Companion release signer and the selected YTM installation's
-signer as well as its capability token. Existing pairings without signer records
-must be renewed.
+Pairing binds the selected package names to a locally generated capability token.
+Companion forks may use their own signing keys without modifying the patch.
 
 Publish only after baseline device results and exact Companion interoperability
 pass. Then test the published prerelease through a clean Morphe Manager setup,

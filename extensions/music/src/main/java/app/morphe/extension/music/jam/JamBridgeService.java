@@ -23,8 +23,7 @@ public final class JamBridgeService extends Service {
         getSharedPreferences("jam", 0).getString(
           "companionPackage",
           Trust.COMPANION
-        ),
-        Trust.COMPANION_CERT
+        )
       );
       Trust.capability(
         getSharedPreferences("jam", 0).getString("cap", null),
