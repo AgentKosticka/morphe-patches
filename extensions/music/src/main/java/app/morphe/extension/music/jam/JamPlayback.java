@@ -1,10 +1,25 @@
+/*
+ * Copyright 2026 Morphe.
+ * https://github.com/MorpheApp/morphe-patches/pull/3014
+ *
+ * See the included NOTICE file for GPLv3 Section 7 terms that apply to this code.
+ */
+
 package app.morphe.extension.music.jam;
 
-import android.app.*;
+import android.app.Activity;
+import android.app.AlertDialog;
 import android.view.View;
+
+import org.json.JSONObject;
+
 import java.lang.ref.WeakReference;
-import java.util.*;
-import org.json.*;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.Set;
+import java.util.WeakHashMap;
+
+import app.morphe.extension.shared.Utils;
 
 /** Native command choices and native now-playing adapter refresh. No local audio mirror. */
 public final class JamPlayback {
@@ -50,7 +65,7 @@ public final class JamPlayback {
   public static void refresh() {
     if (refreshQueued) return;
     refreshQueued = true;
-    JamUi.main.post(() -> {
+    Utils.runOnMainThread(() -> {
       refreshQueued = false;
       if (refreshing) return;
       refreshing = true;
@@ -90,7 +105,7 @@ public final class JamPlayback {
     capture(owner);
     String video = QueueCommand.watchVideo(bytes);
     if (video == null || !participant()) return false;
-    JamUi.main.post(() ->
+    Utils.runOnMainThread(() ->
       choices(video, null, () -> owner.patch_jamDispatch(endpoint, map), false)
     );
     return true;
@@ -99,12 +114,9 @@ public final class JamPlayback {
   public static boolean queueTap(Object item) {
     if (!participant()) return false;
     if (JamMirror.selection(item) < 0) {
-      JamUi.main.post(() -> {
+      Utils.runOnMainThread(() -> {
         Activity activity = JamUi.activity(null);
-        if (activity != null) JamUi.toast(
-          activity,
-          "Waiting for the host queue"
-        );
+        if (activity != null) Utils.showToastLong("Waiting for the host queue");
       });
       return true;
     }
@@ -112,7 +124,7 @@ public final class JamPlayback {
       YtmBridge.QueueAccess a = YtmBridge.access();
       String video = a.patch_jamVideoId(item),
         id = Long.toString(a.patch_jamItemId(item));
-      JamUi.main.post(() -> choices(video, id, () -> local(video), true));
+      Utils.runOnMainThread(() -> choices(video, id, () -> local(video), true));
       return true;
     } catch (Exception e) {
       return true;
@@ -138,7 +150,10 @@ public final class JamPlayback {
     if (!name.contains("play_pause_replay")) return false;
     Object item = JamMirror.now();
     if (item != null) queueTap(item);
-    else JamUi.toast(view.getContext(), "Waiting for the host queue");
+    else {
+      view.getContext();
+      Utils.showToastLong("Waiting for the host queue");
+    }
     return true;
   }
 
@@ -183,7 +198,7 @@ public final class JamPlayback {
         if (index == labels.length - 1) {
           JamUi.call(activity, JamUi.command("END"), response -> {
             if (!response.optBoolean("ok")) {
-              JamUi.toast(activity, response.optString("error"));
+              Utils.showToastLong(response.optString("error"));
               return;
             }
             try {
@@ -194,15 +209,15 @@ public final class JamPlayback {
               JamUi.latest = idle;
               JamClock.clear();
               JamMirror.accept(activity, idle);
-              JamUi.main.post(() -> {
+              Utils.runOnMainThread(() -> {
                 try {
                   playLocal.run();
                 } catch (Exception e) {
-                  JamUi.toast(activity, e.getMessage());
+                  Utils.showToastLong(e.getMessage());
                 }
               });
             } catch (Exception e) {
-              JamUi.toast(activity, e.getMessage());
+              Utils.showToastLong(e.getMessage());
             }
           });
           return;
@@ -213,13 +228,10 @@ public final class JamPlayback {
           ).put("videoId", video);
           if (item != null) command.put("item", item);
           JamUi.call(activity, command, response -> {
-            if (!response.optBoolean("ok")) JamUi.toast(
-              activity,
-              response.optString("error")
-            );
+            if (!response.optBoolean("ok")) Utils.showToastLong(response.optString("error"));
           });
         } catch (Exception e) {
-          JamUi.toast(activity, e.getMessage());
+          Utils.showToastLong(e.getMessage());
         }
       })
       .setNegativeButton("Cancel", null)
@@ -232,7 +244,7 @@ public final class JamPlayback {
   static void leaveAndPlay(Activity activity, String video, long position) {
     JamUi.call(activity, JamUi.command("END"), response -> {
       if (!response.optBoolean("ok")) {
-        JamUi.toast(activity, response.optString("error"));
+        Utils.showToastLong(response.optString("error"));
         return;
       }
       try {
@@ -243,19 +255,19 @@ public final class JamPlayback {
         JamUi.latest = idle;
         JamClock.clear();
         JamMirror.accept(activity, idle);
-        JamUi.main.post(() -> {
+        Utils.runOnMainThread(() -> {
           try {
             local(video);
-            JamUi.main.postDelayed(
+            Utils.runOnMainThreadDelayed(
               () -> JamClock.seekLocalWhenReady(video, position, 50),
               300
             );
           } catch (Exception e) {
-            JamUi.toast(activity, e.getMessage());
+            Utils.showToastLong(e.getMessage());
           }
         });
       } catch (Exception e) {
-        JamUi.toast(activity, e.getMessage());
+        Utils.showToastLong(e.getMessage());
       }
     });
   }

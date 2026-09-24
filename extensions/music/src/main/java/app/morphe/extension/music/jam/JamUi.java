@@ -1,18 +1,49 @@
+/*
+ * Copyright 2026 Morphe.
+ * https://github.com/MorpheApp/morphe-patches/pull/3014
+ *
+ * See the included NOTICE file for GPLv3 Section 7 terms that apply to this code.
+ */
+
 package app.morphe.extension.music.jam;
 
-import android.app.*;
-import android.content.*;
-import android.graphics.*;
-import android.os.*;
-import android.widget.*;
-import app.morphe.extension.music.settings.Settings;
-import app.morphe.jam.ipc.*;
+import android.app.Activity;
+import android.app.AlertDialog;
+import android.content.ClipData;
+import android.content.ClipboardManager;
+import android.content.ComponentName;
+import android.content.Context;
+import android.content.ContextWrapper;
+import android.content.Intent;
+import android.content.ServiceConnection;
+import android.graphics.BitmapFactory;
+import android.graphics.Typeface;
+import android.os.Handler;
+import android.os.IBinder;
+import android.os.Looper;
+import android.widget.EditText;
+import android.widget.ImageView;
+import android.widget.LinearLayout;
+import android.widget.TextView;
+
+import org.json.JSONObject;
+
 import java.lang.ref.WeakReference;
 import java.security.SecureRandom;
-import java.util.*;
-import java.util.concurrent.*;
+import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.Locale;
+import java.util.Set;
+import java.util.UUID;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.function.Consumer;
-import org.json.*;
+
+import app.morphe.extension.music.settings.Settings;
+import app.morphe.extension.shared.Utils;
+import app.morphe.jam.ipc.BridgeProtocol;
+import app.morphe.jam.ipc.IJamCompanion;
+import app.morphe.jam.ipc.Trust;
 
 /** Player-integrated UI, with one live shared-state feed per YTM process. */
 public final class JamUi {
@@ -98,7 +129,7 @@ public final class JamUi {
           .apply();
         latest = new JSONObject();
         dialog.dismiss();
-        toast(c, "Package saved. Set up Jam Layer to connect.");
+        Utils.showToastLong("Package saved. Set up Jam Layer to connect.");
       })
     );
     dialog.show();
@@ -130,7 +161,7 @@ public final class JamUi {
 
   public static void install(Activity a) {
     if (!ENABLED) return;
-    main.post(() -> {
+    Utils.runOnMainThread(() -> {
       current = new WeakReference<>(a);
       application = a.getApplicationContext();
       if (!capability(a).isEmpty()) {
@@ -166,14 +197,14 @@ public final class JamUi {
   private static void ensurePolling() {
     if (!polling) {
       polling = true;
-      main.post(poll);
+      Utils.runOnMainThread(poll);
     }
   }
 
   private static void pollNow() {
     polling = true;
     main.removeCallbacks(poll);
-    main.post(poll);
+    Utils.runOnMainThread(poll);
   }
 
   private static final Runnable poll = new Runnable() {
@@ -196,7 +227,7 @@ public final class JamUi {
             value = JamBridgeService.error("Jam disconnected");
           }
           JSONObject received = value;
-          main.post(() -> {
+          Utils.runOnMainThread(() -> {
             inFlight = false;
             latest = received;
             JamMirror.accept(application, received);
@@ -210,7 +241,7 @@ public final class JamUi {
         polling = false;
         return;
       }
-      main.postDelayed(this, sessionActive() ? 600 : 3000);
+      Utils.runOnMainThreadDelayed(this, sessionActive() ? 600 : 3000);
     }
   };
 
@@ -237,7 +268,7 @@ public final class JamUi {
           try {
             app.unbindService(this);
           } catch (Exception ignored) {}
-          main.postDelayed(() -> bind(app), 1500);
+          Utils.runOnMainThreadDelayed(() -> bind(app), 1500);
         }
       };
       binding = app.bindService(
@@ -278,7 +309,7 @@ public final class JamUi {
 
   static void call(Context c, JSONObject request, Consumer<JSONObject> done) {
     if (Looper.myLooper() != Looper.getMainLooper()) {
-      main.post(() -> call(c, request, done));
+      Utils.runOnMainThread(() -> call(c, request, done));
       return;
     }
     bind(c);
@@ -296,7 +327,8 @@ public final class JamUi {
         value = JamBridgeService.error(e.getMessage());
       }
       JSONObject response = value;
-      main.post(() -> {
+
+      Utils.runOnMainThread(() -> {
         pending = Math.max(0, pending - 1);
         if (
           response.optBoolean("ok") &&
@@ -319,7 +351,7 @@ public final class JamUi {
 
   static void edit(Context c, JSONObject request) {
     call(c, request, r -> {
-      if (!r.optBoolean("ok")) toast(c, r.optString("error"));
+      if (!r.optBoolean("ok")) Utils.showToastLong(r.optString("error"));
     });
   }
 
@@ -342,10 +374,6 @@ public final class JamUi {
     );
   }
 
-  static void toast(Context c, String message) {
-    Toast.makeText(c, message, Toast.LENGTH_LONG).show();
-  }
-
   private static void startLayer(Context c) {
     c.startForegroundService(
       new Intent()
@@ -356,10 +384,7 @@ public final class JamUi {
 
   public static void open(Context context) {
     if (!ENABLED) {
-      toast(
-        context,
-        "Enable Jam queue sharing in settings, then restart YouTube Music"
-      );
+      Utils.showToastLong("Enable Jam queue sharing in settings, then restart YouTube Music");
       return;
     }
     JamPanel.show(context);
@@ -386,16 +411,16 @@ public final class JamUi {
       c.getSharedPreferences("jam", 0)
         .edit()
         .putString("cap", token.toString())
-        .commit();
+        .apply();
       a.startActivityForResult(
         new Intent("app.morphe.jam.PAIR")
           .setComponent(companionComponent(c, COMPANION_ACTIVITY))
           .putExtra("cap", token.toString()),
         18431
       );
-      main.postDelayed(() -> bind(c), 1500);
+      Utils.runOnMainThreadDelayed(() -> bind(c), 1500);
     } catch (Exception e) {
-      toast(c, "Install the selected Jam Layer package first");
+      Utils.showToastLong("Install the selected Jam Layer package first");
     }
   }
 
@@ -405,7 +430,7 @@ public final class JamUi {
         new Intent().setComponent(companionComponent(c, COMPANION_ACTIVITY))
       );
     } catch (Exception e) {
-      toast(c, "Install the selected Jam Layer package first");
+      Utils.showToastLong("Install the selected Jam Layer package first");
     }
   }
 
@@ -468,7 +493,7 @@ public final class JamUi {
         try {
           startLayer(c);
           call(c, command("JOIN").put("invite", value), r -> {
-            if (!r.optBoolean("ok")) toast(c, r.optString("error"));
+            if (!r.optBoolean("ok")) Utils.showToastLong(r.optString("error"));
           });
           dialog.dismiss();
           open(c);
@@ -484,7 +509,7 @@ public final class JamUi {
   static void invite(Context c) {
     call(c, command("INVITE"), r -> {
       if (!r.optBoolean("ok")) {
-        toast(c, r.optString("error"));
+        Utils.showToastLong(r.optString("error"));
         return;
       }
       String code = r.optString("code");
@@ -558,7 +583,7 @@ public final class JamUi {
     if (decoded == null || a == null || a.isFinishing()) return false;
     if (companion == null) {
       if (JamMirror.active()) {
-        main.post(() -> toast(a, "Jam is reconnecting; try again shortly"));
+        Utils.runOnMainThread(() -> Utils.showToastLong("Jam is reconnecting; try again shortly"));
         return true;
       }
       return false;
@@ -577,16 +602,13 @@ public final class JamUi {
           return;
         }
         call(a, command(decoded[1]).put("videoId", decoded[0]), response ->
-          toast(
-            a,
-            response.optBoolean("ok")
-              ? "Added to Jam"
-              : response.optString("error")
-          )
+                Utils.showToastLong(response.optBoolean("ok")
+                          ? "Added to Jam"
+                          : response.optString("error"))
         );
       } catch (Exception e) {
-        main.post(() ->
-          toast(a, "Jam is unavailable; the track was not added")
+        Utils.runOnMainThread(() ->
+                Utils.showToastLong("Jam is unavailable; the track was not added")
         );
       }
     });

@@ -1,13 +1,28 @@
+/*
+ * Copyright 2026 Morphe.
+ * https://github.com/MorpheApp/morphe-patches/pull/3014
+ *
+ * See the included NOTICE file for GPLv3 Section 7 terms that apply to this code.
+ */
+
 package app.morphe.extension.music.jam;
 
-import android.app.*;
-import android.content.*;
+import android.app.Activity;
+import android.app.AlertDialog;
+import android.content.Context;
 import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
-import android.view.*;
-import android.widget.*;
-import java.util.function.Consumer;
+import android.view.Gravity;
+import android.view.View;
+import android.widget.Button;
+import android.widget.LinearLayout;
+import android.widget.ProgressBar;
+import android.widget.Switch;
+import android.widget.TextView;
+
 import org.json.JSONObject;
+
+import java.util.function.Consumer;
 
 /** Live session controls using the host application's dialog theme. */
 final class JamPanel {

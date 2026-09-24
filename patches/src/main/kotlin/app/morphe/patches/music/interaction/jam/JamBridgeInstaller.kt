@@ -1,3 +1,10 @@
+/*
+ * Copyright 2026 Morphe.
+ * https://github.com/MorpheApp/morphe-patches/pull/3014
+ *
+ * See the included NOTICE file for GPLv3 Section 7 terms that apply to this code.
+ */
+
 package app.morphe.patches.music.interaction.jam
 
 import app.morphe.patcher.extensions.InstructionExtensions.addInstructions
@@ -52,19 +59,17 @@ private fun BytecodePatchContext.installQueueAccess(queue: JamQueueAbi) {
             :local
             ${invokeKind(queue.enqueue)} {p0, p1}, $enqueue
             return-void
-        """,
+        """
     )
     manager.addBridge(
         "patch_jamEnqueue",
         listOf("[B"),
         "V",
         4,
-        body =
-            queue.command.decode("p1", "v0") +
-                """
+        body = queue.command.decode("p1", "v0") + """
             ${invokeKind(queue.enqueue)} {p0, v0}, $enqueue
             return-void
-        """,
+        """
     )
     manager.addReferenceGetter("patch_jamExecutor", queue.executor)
     installQueueSnapshots(manager, queue)
@@ -82,15 +87,14 @@ private fun BytecodePatchContext.installQueueSnapshots(manager: MutableClass, qu
         listOf("I"),
         "[Ljava/lang/Object;",
         3,
-        body =
-            """
+        body = """
             iget-object v0, p0, ${queue.storage.field}
             ${invokeKind(queue.storage.items)} {v0, p1}, ${queue.storage.items}
             move-result-object v0
             invoke-interface {v0}, Ljava/util/List;->toArray()[Ljava/lang/Object;
             move-result-object v0
             return-object v0
-        """,
+        """
     )
     installNativeAccessor(
         manager,
@@ -103,8 +107,7 @@ private fun BytecodePatchContext.installQueueSnapshots(manager: MutableClass, qu
         emptyList(),
         "Z",
         3,
-        body =
-            """
+        body = """
             iget-object v0, p0, ${queue.storage.field}
             ${invokeKind(queue.storage.mode)} {v0}, ${queue.storage.mode}
             move-result-object v0
@@ -115,7 +118,7 @@ private fun BytecodePatchContext.installQueueSnapshots(manager: MutableClass, qu
             :remote
             const/4 v0, 0x0
             return v0
-        """,
+        """
     )
 }
 
@@ -135,14 +138,12 @@ private fun BytecodePatchContext.installQueueCreation(manager: MutableClass, que
         listOf("[B", "J"),
         "Ljava/lang/Object;",
         8,
-        body =
-            item.itemProto.decode("p1", "v1") +
-                """
+        body = item.itemProto.decode("p1", "v1") + """
             iget-object v3, p0, ${item.factory}
             new-instance v0, ${item.createItem.type}
             invoke-direct {v0, p2, p3, v1, v3}, ${item.createItem.type}-><init>(J${item.itemProto.type}${item.factory.type})V
             return-object v0
-        """,
+        """
     )
 }
 
@@ -170,20 +171,18 @@ private fun BytecodePatchContext.installDisplayAccess(
         emptyList(),
         "Ljava/lang/Object;",
         2,
-        body =
-            """
+        body = """
             iget-object v0, p0, ${display.managerField}
             iget-object v0, v0, ${display.list}
             return-object v0
-        """,
+        """
     )
     manager.addBridge(
         "patch_jam$property",
         listOf("Ljava/lang/Object;"),
         "V",
         4,
-        body =
-            """
+        body = """
             iget-object v0, p0, ${display.managerField}
             iget-object v1, v0, ${display.list}
             if-eqz v1, :set
@@ -194,19 +193,18 @@ private fun BytecodePatchContext.installDisplayAccess(
             ${invokeKind(storage.attachListener)} {p1, v0}, ${storage.attachListener}
             ${invokeKind(display.refresh)} {v0}, ${display.refresh}
             return-void
-        """,
+        """
     )
     manager.addBridge(
         "patch_jamRefresh$refresh",
         emptyList(),
         "V",
         2,
-        body =
-            """
+        body = """
             iget-object v0, p0, ${display.managerField}
             ${invokeKind(display.refresh)} {v0}, ${display.refresh}
             return-void
-        """,
+        """
     )
     if (property == "DisplayedList") {
         manager.addBridge(
@@ -214,13 +212,12 @@ private fun BytecodePatchContext.installDisplayAccess(
             listOf("Ljava/lang/Runnable;"),
             "V",
             3,
-            body =
-                """
+            body = """
                 iget-object v0, p0, ${display.managerField}
                 iget-object v0, v0, ${display.handler}
                 invoke-virtual {v0, p1}, Landroid/os/Handler;->post(Ljava/lang/Runnable;)Z
                 return-void
-            """,
+            """
         )
     }
 }
@@ -246,7 +243,7 @@ private fun BytecodePatchContext.installDisplayInterception(display: QueueDispla
             move-result v0
             :done
             return v0
-        """,
+        """
     )
     val move = display.commitMove.getMutableMethod()
     val moveName = move.name
@@ -268,7 +265,7 @@ private fun BytecodePatchContext.installDisplayInterception(display: QueueDispla
             :local
             ${invokeKind(display.commitMove)} {p0, p1, p2}, $move
             return-void
-        """,
+        """
     )
 }
 
@@ -289,33 +286,31 @@ private fun BytecodePatchContext.installQueueOperations(manager: MutableClass, q
             ${invokeKind(queue.remove)} {p0, p1}, $remove
             :done
             return-void
-        """,
+        """
     )
     manager.addBridge(
         "patch_jamRemoveItem",
         listOf("Ljava/lang/Object;"),
         "V",
         2,
-        body =
-            """
+        body = """
             check-cast p1, ${queue.item.type}
             ${invokeKind(queue.remove)} {p0, p1}, $remove
             return-void
-        """,
+        """
     )
     manager.addBridge(
         "patch_jamMoveLane",
         listOf("I", "I", "I"),
         "V",
         5,
-        body =
-            """
+        body = """
             iget-object v0, p0, ${queue.storage.field}
             ${invokeKind(queue.storage.lane)} {v0, p1}, ${queue.storage.lane}
             move-result-object v0
             ${invokeKind(queue.storage.laneMove)} {v0, p2, p3}, ${queue.storage.laneMove}
             return-void
-        """,
+        """
     )
     val comparable = queue.mutation.move.parameters().first()
     manager.addBridge(
@@ -323,8 +318,7 @@ private fun BytecodePatchContext.installQueueOperations(manager: MutableClass, q
         listOf("Ljava/lang/Object;", "Ljava/lang/Object;"),
         "V",
         4,
-        body =
-            """
+        body = """
             check-cast p1, $comparable
             check-cast p2, $comparable
             iget-object v0, p0, ${queue.mutation.provider}
@@ -333,7 +327,7 @@ private fun BytecodePatchContext.installQueueOperations(manager: MutableClass, q
             check-cast v0, ${queue.mutation.notifierType}
             ${invokeKind(queue.mutation.move)} {v0, p1, p2}, ${queue.mutation.move}
             return-void
-        """,
+        """
     )
 }
 
@@ -343,30 +337,27 @@ private fun BytecodePatchContext.installQueueMenu(manager: MutableClass, queue: 
         listOf("[B"),
         "Ljava/util/concurrent/Future;",
         5,
-        body =
-            queue.command.decode("p1", "v0") +
-                """
+        body = queue.command.decode("p1", "v0") + """
             iget-object v1, p0, ${queue.menu.dispatcher}
             invoke-virtual {p0}, ${manager.type}->patch_jamExecutor()Ljava/util/concurrent/Executor;
             move-result-object v2
             ${invokeKind(queue.menu.dispatch)} {v1, v0, v2}, ${queue.menu.dispatch}
             move-result-object v0
             return-object v0
-        """,
+        """
     )
     manager.addBridge(
         "patch_jamMenuItems",
         listOf("Ljava/lang/Object;"),
         "[Ljava/lang/Object;",
         2,
-        body =
-            """
+        body = """
             check-cast p1, ${queue.menu.responseType}
             iget-object p1, p1, ${queue.menu.responseItems}
             invoke-interface {p1}, Ljava/util/List;->toArray()[Ljava/lang/Object;
             move-result-object p1
             return-object p1
-        """,
+        """
     )
 }
 

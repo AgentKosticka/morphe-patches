@@ -1,9 +1,26 @@
+/*
+ * Copyright 2026 Morphe.
+ * https://github.com/MorpheApp/morphe-patches/pull/3014
+ *
+ * See the included NOTICE file for GPLv3 Section 7 terms that apply to this code.
+ */
+
 package app.morphe.extension.music.jam;
 
 import android.content.Context;
+
+import org.json.JSONArray;
+import org.json.JSONObject;
+
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
+import java.util.Set;
+import java.util.WeakHashMap;
+
+import app.morphe.extension.shared.Logger;
+import app.morphe.extension.shared.Utils;
 import app.morphe.jam.ipc.QueueEdits;
-import java.util.*;
-import org.json.*;
 
 /** Native adapters display authoritative state plus unacknowledged local gestures. */
 public final class JamMirror {
@@ -106,8 +123,8 @@ public final class JamMirror {
         }
         edits.accept(view);
         render();
-      } catch (Exception e) {
-        android.util.Log.e("MorpheJam", "Native mirror failed", e);
+      } catch (Exception ex) {
+        Logger.printException(() -> "Native mirror failed", ex);
       }
     });
   }
@@ -268,7 +285,7 @@ public final class JamMirror {
           .put("lane", lane)
       );
     } catch (Exception e) {
-      JamUi.toast(context, "Queue changed; try the gesture again");
+      Utils.showToastLong("Queue changed; try the gesture again");
     }
     return true;
   }
@@ -281,7 +298,7 @@ public final class JamMirror {
         render();
         sendNext();
       } catch (Exception e) {
-        JamUi.toast(context, e.getMessage());
+        Utils.showToastLong(e.getMessage());
       }
     });
   }
@@ -298,13 +315,10 @@ public final class JamMirror {
         try {
           edits.complete(response);
           render();
-        } catch (Exception e) {
-          android.util.Log.e("MorpheJam", "Edit acknowledgement failed", e);
+        } catch (Exception ex) {
+          Logger.printException(() ->"Edit acknowledgement failed", ex);
         }
-        if (!response.optBoolean("ok")) JamUi.toast(
-          context,
-          response.optString("error")
-        );
+        if (!response.optBoolean("ok")) Utils.showToastLong(response.optString("error"));
         sendNext();
       });
     } catch (Exception e) {
@@ -312,7 +326,7 @@ public final class JamMirror {
         edits.complete(new JSONObject());
         render();
       } catch (Exception ignored) {}
-      JamUi.toast(context, e.getMessage());
+      Utils.showToastLong(e.getMessage());
       sendNext();
     }
   }

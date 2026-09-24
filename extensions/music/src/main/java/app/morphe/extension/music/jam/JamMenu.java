@@ -1,7 +1,21 @@
+/*
+ * Copyright 2026 Morphe.
+ * https://github.com/MorpheApp/morphe-patches/pull/3014
+ *
+ * See the included NOTICE file for GPLv3 Section 7 terms that apply to this code.
+ */
+
 package app.morphe.extension.music.jam;
 
 import android.view.View;
-import java.util.concurrent.*;
+
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
+
+import app.morphe.extension.shared.Logger;
+import app.morphe.extension.shared.Utils;
 
 /** Resolve native song options with the participant's account, without enqueueing or playing. */
 public final class JamMenu {
@@ -11,8 +25,7 @@ public final class JamMenu {
     void patch_jamShowMenu(View anchor, Object item);
   }
 
-  private static final ExecutorService loader =
-    Executors.newSingleThreadExecutor();
+  private static final ExecutorService loader = Executors.newSingleThreadExecutor();
   private static boolean loading;
 
   public static void bind(View view, Row row, Object item) {
@@ -21,7 +34,8 @@ public final class JamMenu {
       if (JamMirror.selection(item) < 0) return false;
       if (loading) return true;
       loading = true;
-      JamUi.toast(anchor.getContext(), "Loading song options…");
+      anchor.getContext();
+      Utils.showToastLong("Loading song options…");
       loader.execute(() -> {
         Object resolved = null;
         Future<?> request = null;
@@ -41,10 +55,10 @@ public final class JamMenu {
           }
         } catch (Exception error) {
           if (request != null) request.cancel(true);
-          android.util.Log.e("MorpheJam", "Song menu lookup failed", error);
+          Logger.printException(() -> "Song menu lookup failed", error);
         }
         Object ready = resolved;
-        JamUi.main.post(() -> {
+        Utils.runOnMainThread(() -> {
           loading = false;
           if (
             !anchor.isAttachedToWindow() ||
@@ -52,17 +66,16 @@ public final class JamMenu {
             JamMirror.selection(item) < 0
           ) return;
           if (ready == null) {
-            JamUi.toast(
-              anchor.getContext(),
-              "Song options unavailable; try again"
-            );
+            anchor.getContext();
+            Utils.showToastLong("Song options unavailable; try again");
             return;
           }
           try {
             row.patch_jamShowMenu(anchor, ready);
           } catch (Exception error) {
-            android.util.Log.e("MorpheJam", "Song menu failed", error);
-            JamUi.toast(anchor.getContext(), "Could not open song options");
+            Logger.printException(() -> "Song menu failed", error);
+            anchor.getContext();
+            Utils.showToastLong("Could not open song options");
           }
         });
       });
