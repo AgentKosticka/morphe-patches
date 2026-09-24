@@ -1,11 +1,14 @@
 package app.morphe.extension.music.jam;
 
+import static app.morphe.extension.shared.StringRef.str;
+
 import android.app.*;
 import android.content.*;
 import android.graphics.*;
 import android.os.*;
 import android.widget.*;
 import app.morphe.extension.music.settings.Settings;
+import app.morphe.extension.shared.Logger;
 import app.morphe.jam.ipc.*;
 import java.lang.ref.WeakReference;
 import java.security.SecureRandom;
@@ -72,22 +75,20 @@ public final class JamUi {
     input.setSingleLine();
     input.setText(companionPackage(c));
     input.setSelectAllOnFocus(true);
-    input.setHint("app.example.jam");
+    input.setHint(str("morphe_music_jam_package_example"));
     input.setPadding(dp(c, 24), 0, dp(c, 24), 0);
     AlertDialog dialog = new AlertDialog.Builder(c)
-      .setTitle("Jam Layer package")
-      .setMessage(
-        "Use an installed companion package. Pairing requires your approval and a local capability token."
-      )
+      .setTitle(str("morphe_music_jam_companion_package_title"))
+      .setMessage(str("morphe_music_jam_package_message"))
       .setView(input)
-      .setNegativeButton("Cancel", null)
-      .setPositiveButton("Use package", null)
+      .setNegativeButton(str("morphe_music_jam_cancel"), null)
+      .setPositiveButton(str("morphe_music_jam_use_package"), null)
       .create();
     dialog.setOnShowListener(d ->
       dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v -> {
         String value = input.getText().toString().trim();
         if (!validPackage(value)) {
-          input.setError("Enter a valid Android package name");
+          input.setError(str("morphe_music_jam_invalid_package"));
           return;
         }
         resetCompanion(c);
@@ -98,7 +99,7 @@ public final class JamUi {
           .apply();
         latest = new JSONObject();
         dialog.dismiss();
-        toast(c, "Package saved. Set up Jam Layer to connect.");
+        toast(c, str("morphe_music_jam_package_saved"));
       })
     );
     dialog.show();
@@ -113,7 +114,9 @@ public final class JamUi {
     binding = false;
     if (old != null) try {
       app.unbindService(old);
-    } catch (Exception ignored) {}
+    } catch (IllegalArgumentException error) {
+      Logger.printInfo(() -> "Jam companion was already unbound", error);
+    }
   }
 
   static Activity activity(Context c) {
@@ -131,11 +134,15 @@ public final class JamUi {
   public static void install(Activity a) {
     if (!ENABLED) return;
     main.post(() -> {
-      current = new WeakReference<>(a);
-      application = a.getApplicationContext();
-      if (!capability(a).isEmpty()) {
-        bind(a);
-        ensurePolling();
+      try {
+        current = new WeakReference<>(a);
+        application = a.getApplicationContext();
+        if (!capability(a).isEmpty()) {
+          bind(a);
+          ensurePolling();
+        }
+      } catch (Exception error) {
+        Logger.printInfo(() -> "Could not initialize Jam UI", error);
       }
     });
   }
@@ -193,7 +200,9 @@ public final class JamUi {
               new JSONObject().put("op", "VIEW")
             );
           } catch (Exception e) {
-            value = JamBridgeService.error("Jam disconnected");
+            value = JamBridgeService.error(
+              str("morphe_music_jam_disconnected")
+            );
           }
           JSONObject received = value;
           main.post(() -> {
@@ -236,7 +245,12 @@ public final class JamUi {
           connection = null;
           try {
             app.unbindService(this);
-          } catch (Exception ignored) {}
+          } catch (IllegalArgumentException error) {
+            Logger.printInfo(
+              () -> "Jam companion binding was already gone",
+              error
+            );
+          }
           main.postDelayed(() -> bind(app), 1500);
         }
       };
@@ -250,6 +264,7 @@ public final class JamUi {
       companion = null;
       binding = false;
       connection = null;
+      Logger.printInfo(() -> "Could not bind Jam companion", e);
     }
   }
 
@@ -289,7 +304,7 @@ public final class JamUi {
       try {
         IJamCompanion service = companion;
         if (service == null) throw new IllegalStateException(
-          "Enable Jam Layer first"
+          str("morphe_music_jam_enable_layer_first")
         );
         value = companionCall(c, service, request);
       } catch (Exception e) {
@@ -308,7 +323,12 @@ public final class JamUi {
               "allowGuestEdits",
               request.optBoolean("allow")
             );
-          } catch (Exception ignored) {}
+          } catch (Exception error) {
+            Logger.printInfo(
+              () -> "Could not update Jam guest edit state",
+              error
+            );
+          }
         }
         done.accept(response);
         if (response.optBoolean("ok")) pollNow();
@@ -356,13 +376,14 @@ public final class JamUi {
 
   public static void open(Context context) {
     if (!ENABLED) {
-      toast(
-        context,
-        "Enable Jam queue sharing in settings, then restart YouTube Music"
-      );
+      toast(context, str("morphe_music_jam_enable_patch_first"));
       return;
     }
-    JamPanel.show(context);
+    try {
+      JamPanel.show(context);
+    } catch (Exception error) {
+      Logger.printInfo(() -> "Could not open Jam panel", error);
+    }
   }
 
   static void host(Context c) {
@@ -395,7 +416,7 @@ public final class JamUi {
       );
       main.postDelayed(() -> bind(c), 1500);
     } catch (Exception e) {
-      toast(c, "Install the selected Jam Layer package first");
+      toast(c, str("morphe_music_jam_install_layer_first"));
     }
   }
 
@@ -405,7 +426,7 @@ public final class JamUi {
         new Intent().setComponent(companionComponent(c, COMPANION_ACTIVITY))
       );
     } catch (Exception e) {
-      toast(c, "Install the selected Jam Layer package first");
+      toast(c, str("morphe_music_jam_install_layer_first"));
     }
   }
 
@@ -414,14 +435,12 @@ public final class JamUi {
     content.setOrientation(LinearLayout.VERTICAL);
     content.setPadding(dp(c, 24), dp(c, 8), dp(c, 24), 0);
     TextView hint = new TextView(c);
-    hint.setText(
-      "Enter the code shown on the host. Wi-Fi Aware can connect nearby devices even when their LANs differ."
-    );
+    hint.setText(str("morphe_music_jam_join_hint"));
     hint.setTextSize(14);
     hint.setPadding(0, 0, 0, dp(c, 16));
     content.addView(hint);
     EditText input = new EditText(c);
-    input.setHint("ABCD-EFGH");
+    input.setHint(str("morphe_music_jam_code_example"));
     input.setSingleLine();
     input.setTextSize(22);
     input.setTypeface(Typeface.MONOSPACE);
@@ -431,10 +450,10 @@ public final class JamUi {
     });
     content.addView(input, new LinearLayout.LayoutParams(-1, dp(c, 56)));
     AlertDialog dialog = new AlertDialog.Builder(c)
-      .setTitle("Join with a code")
+      .setTitle(str("morphe_music_jam_join_with_code"))
       .setView(content)
-      .setPositiveButton("Join", null)
-      .setNeutralButton("Scan QR", (d, w) -> {
+      .setPositiveButton(str("morphe_music_jam_join"), null)
+      .setNeutralButton(str("morphe_music_jam_scan_qr"), (d, w) -> {
         try {
           Activity a = activity(c);
           if (a != null) a.startActivityForResult(
@@ -447,7 +466,7 @@ public final class JamUi {
           setup(c);
         }
       })
-      .setNegativeButton("Cancel", null)
+      .setNegativeButton(str("morphe_music_jam_cancel"), null)
       .create();
     dialog.setOnShowListener(d ->
       dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v -> {
@@ -460,9 +479,7 @@ public final class JamUi {
           !value.startsWith("morphejam://") &&
           !normalized.matches("[A-HJ-NP-Z2-9]{8}")
         ) {
-          input.setError(
-            "Enter the eight-character code or paste an invitation"
-          );
+          input.setError(str("morphe_music_jam_invalid_invite"));
           return;
         }
         try {
@@ -502,20 +519,22 @@ public final class JamUi {
             60000
         );
         AlertDialog popup = new AlertDialog.Builder(c)
-          .setTitle("Join your Jam")
+          .setTitle(str("morphe_music_jam_join_your_jam"))
           .setMessage(
-            "Enter this code on a nearby device. Wi-Fi Aware works across separate LANs when supported. Expires in " +
-              minutes +
-              " minutes."
+            String.format(str("morphe_music_jam_code_expires"), minutes)
           )
           .setView(text)
-          .setPositiveButton("Copy code", (d, w) ->
+          .setPositiveButton(str("morphe_music_jam_copy_code"), (d, w) ->
             (
               (ClipboardManager) c.getSystemService(Context.CLIPBOARD_SERVICE)
-            ).setPrimaryClip(ClipData.newPlainText("Jam code", code))
+            ).setPrimaryClip(
+              ClipData.newPlainText(str("morphe_music_jam_code_clip"), code)
+            )
           )
-          .setNeutralButton("Show QR", (d, w) -> showQr(c, r))
-          .setNegativeButton("Done", null)
+          .setNeutralButton(str("morphe_music_jam_show_qr"), (d, w) ->
+            showQr(c, r)
+          )
+          .setNegativeButton(str("morphe_music_jam_done"), null)
           .create();
         popup.show();
         styleDialog(popup);
@@ -533,17 +552,18 @@ public final class JamUi {
     image.setAdjustViewBounds(true);
     image.setPadding(24, 24, 24, 24);
     AlertDialog popup = new AlertDialog.Builder(c)
-      .setTitle("Invite to your Jam")
-      .setMessage(
-        "Scan to join and edit this queue. Ending the Jam revokes the invitation."
-      )
+      .setTitle(str("morphe_music_jam_invite_title"))
+      .setMessage(str("morphe_music_jam_invite_message"))
       .setView(image)
-      .setPositiveButton("Done", null)
-      .setNeutralButton("Copy link", (d, w) ->
+      .setPositiveButton(str("morphe_music_jam_done"), null)
+      .setNeutralButton(str("morphe_music_jam_copy_link"), (d, w) ->
         (
           (ClipboardManager) c.getSystemService(Context.CLIPBOARD_SERVICE)
         ).setPrimaryClip(
-          ClipData.newPlainText("Jam invitation", r.optString("invite"))
+          ClipData.newPlainText(
+            str("morphe_music_jam_invitation_clip"),
+            r.optString("invite")
+          )
         )
       )
       .create();
@@ -552,13 +572,25 @@ public final class JamUi {
   }
 
   public static boolean offer(YtmBridge.QueueAccess access, byte[] bytes) {
+    try {
+      return offerQueueCommand(access, bytes);
+    } catch (Exception error) {
+      Logger.printInfo(() -> "Could not inspect Jam queue command", error);
+      return false;
+    }
+  }
+
+  private static boolean offerQueueCommand(
+    YtmBridge.QueueAccess access,
+    byte[] bytes
+  ) {
     if (!ENABLED) return false;
     String[] decoded = QueueCommand.decode(bytes);
     Activity a = current.get();
     if (decoded == null || a == null || a.isFinishing()) return false;
     if (companion == null) {
       if (JamMirror.active()) {
-        main.post(() -> toast(a, "Jam is reconnecting; try again shortly"));
+        main.post(() -> toast(a, str("morphe_music_jam_reconnecting_toast")));
         return true;
       }
       return false;
@@ -580,14 +612,12 @@ public final class JamUi {
           toast(
             a,
             response.optBoolean("ok")
-              ? "Added to Jam"
+              ? str("morphe_music_jam_added_to_jam")
               : response.optString("error")
           )
         );
       } catch (Exception e) {
-        main.post(() ->
-          toast(a, "Jam is unavailable; the track was not added")
-        );
+        main.post(() -> toast(a, str("morphe_music_jam_unavailable_toast")));
       }
     });
     return true;

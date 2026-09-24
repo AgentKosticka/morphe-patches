@@ -1,5 +1,7 @@
 package app.morphe.extension.music.jam;
 
+import static app.morphe.extension.shared.StringRef.str;
+
 import android.content.Context;
 import android.content.Intent;
 import android.net.Uri;
@@ -24,10 +26,7 @@ public final class JamDownloadPreference extends Preference {
     try {
       getContext().startActivity(new Intent(Intent.ACTION_VIEW, RELEASES));
     } catch (RuntimeException error) {
-      JamUi.toast(
-        getContext(),
-        "No browser is available to download Jam Layer"
-      );
+      JamUi.toast(getContext(), str("morphe_music_jam_no_browser"));
     }
   }
 }

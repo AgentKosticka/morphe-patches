@@ -70,7 +70,9 @@ public final class QueueModel {
           host.equals("lh3.googleusercontent.com") ||
           host.equals("lh3.ggpht.com"))
       ) return url;
-    } catch (Exception ignored) {}
+    } catch (IllegalArgumentException ignored) {
+      // Invalid artwork URLs use the known YouTube thumbnail fallback.
+    }
     return "https://i.ytimg.com/vi/" + video + "/hqdefault.jpg";
   }
 

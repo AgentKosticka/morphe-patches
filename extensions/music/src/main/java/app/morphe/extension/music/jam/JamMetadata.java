@@ -31,7 +31,9 @@ public final class JamMetadata {
       String name = "";
       try {
         name = view.getResources().getResourceEntryName(view.getId());
-      } catch (android.content.res.Resources.NotFoundException ignored) {}
+      } catch (android.content.res.Resources.NotFoundException ignored) {
+        // Native labels can have generated IDs; they are not player title or artist views.
+      }
       boolean title = "title".equals(name) || "mini_player_title".equals(name);
       boolean artist =
         "artist".equals(name) || "mini_player_subtitle".equals(name);

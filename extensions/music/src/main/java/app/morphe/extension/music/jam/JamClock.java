@@ -1,11 +1,14 @@
 package app.morphe.extension.music.jam;
 
+import static app.morphe.extension.shared.StringRef.str;
+
 import android.app.*;
 import android.media.MediaMetadata;
 import android.media.session.*;
 import android.os.SystemClock;
 import android.view.View;
 import app.morphe.extension.music.shared.VideoInformation;
+import app.morphe.extension.shared.Logger;
 import java.util.*;
 import java.util.concurrent.*;
 import org.json.*;
@@ -232,7 +235,9 @@ public final class JamClock {
       for (Bar bar : new ArrayList<>(bars.keySet()))
         try {
           bar.patch_jamClock(position(), sample.optLong("duration"));
-        } catch (Exception ignored) {}
+        } catch (Exception error) {
+          Logger.printDebug(() -> "Could not update Jam time bar", error);
+        }
       JamUi.main.postDelayed(this, 200);
     }
   };
@@ -247,7 +252,9 @@ public final class JamClock {
     ))
       try {
         e.getKey().patch_jamRestore(e.getValue());
-      } catch (Exception ignored) {}
+      } catch (Exception error) {
+        Logger.printInfo(() -> "Could not restore Jam time bar", error);
+      }
     // Idle polls must not forget existing time bars. A paused guest can join
     // without another native model callback; the host clock still needs to
     // update that bar. Weak keys release detached views without a session reset.
@@ -270,9 +277,12 @@ public final class JamClock {
         (at / 1000) % 60
       );
       AlertDialog d = new AlertDialog.Builder(a)
-        .setTitle("Seek to " + time + "?")
+        .setTitle(String.format(str("morphe_music_jam_seek_to"), time))
         .setItems(
-          new String[] { "Move the host here", "Quit Jam and play locally" },
+          new String[] {
+            str("morphe_music_jam_move_host_here"),
+            str("morphe_music_jam_quit_and_play"),
+          },
           (w, index) -> {
             if (index == 0) {
               try {
@@ -282,11 +292,13 @@ public final class JamClock {
                     .put("videoId", video)
                     .put("position", at)
                 );
-              } catch (Exception ignored) {}
+              } catch (Exception error) {
+                Logger.printInfo(() -> "Could not send Jam seek", error);
+              }
             } else JamPlayback.leaveAndPlay(a, video, at);
           }
         )
-        .setNegativeButton("Cancel", null)
+        .setNegativeButton(str("morphe_music_jam_cancel"), null)
         .setOnDismissListener(w -> JamPlayback.releaseDialog())
         .create();
       d.show();
@@ -330,7 +342,7 @@ public final class JamClock {
     );
     else {
       Activity a = JamUi.activity(null);
-      if (a != null) JamUi.toast(a, "Song did not become ready to seek");
+      if (a != null) JamUi.toast(a, str("morphe_music_jam_seek_not_ready"));
     }
   }
 }

@@ -1,5 +1,7 @@
 package app.morphe.extension.music.jam;
 
+import static app.morphe.extension.shared.StringRef.str;
+
 import android.view.View;
 import java.util.concurrent.*;
 
@@ -21,7 +23,10 @@ public final class JamMenu {
       if (JamMirror.selection(item) < 0) return false;
       if (loading) return true;
       loading = true;
-      JamUi.toast(anchor.getContext(), "Loading song options…");
+      JamUi.toast(
+        anchor.getContext(),
+        str("morphe_music_jam_loading_song_options")
+      );
       loader.execute(() -> {
         Object resolved = null;
         Future<?> request = null;
@@ -54,7 +59,7 @@ public final class JamMenu {
           if (ready == null) {
             JamUi.toast(
               anchor.getContext(),
-              "Song options unavailable; try again"
+              str("morphe_music_jam_song_options_unavailable")
             );
             return;
           }
@@ -62,7 +67,10 @@ public final class JamMenu {
             row.patch_jamShowMenu(anchor, ready);
           } catch (Exception error) {
             android.util.Log.e("MorpheJam", "Song menu failed", error);
-            JamUi.toast(anchor.getContext(), "Could not open song options");
+            JamUi.toast(
+              anchor.getContext(),
+              str("morphe_music_jam_song_options_failed")
+            );
           }
         });
       });

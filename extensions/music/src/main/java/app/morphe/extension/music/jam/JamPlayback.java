@@ -1,7 +1,10 @@
 package app.morphe.extension.music.jam;
 
+import static app.morphe.extension.shared.StringRef.str;
+
 import android.app.*;
 import android.view.View;
+import app.morphe.extension.shared.Logger;
 import java.lang.ref.WeakReference;
 import java.util.*;
 import org.json.*;
@@ -87,6 +90,20 @@ public final class JamPlayback {
     Object map,
     byte[] bytes
   ) {
+    try {
+      return offerPlayback(owner, endpoint, map, bytes);
+    } catch (Exception error) {
+      Logger.printInfo(() -> "Could not inspect Jam playback command", error);
+      return false;
+    }
+  }
+
+  private static boolean offerPlayback(
+    Router owner,
+    Object endpoint,
+    Object map,
+    byte[] bytes
+  ) {
     capture(owner);
     String video = QueueCommand.watchVideo(bytes);
     if (video == null || !participant()) return false;
@@ -103,7 +120,7 @@ public final class JamPlayback {
         Activity activity = JamUi.activity(null);
         if (activity != null) JamUi.toast(
           activity,
-          "Waiting for the host queue"
+          str("morphe_music_jam_waiting_host_queue")
         );
       });
       return true;
@@ -115,16 +132,28 @@ public final class JamPlayback {
       JamUi.main.post(() -> choices(video, id, () -> local(video), true));
       return true;
     } catch (Exception e) {
+      Logger.printInfo(() -> "Could not open Jam queue choice", e);
       return true;
     }
   }
 
   public static boolean playButton(View view) {
+    try {
+      return playButtonSafely(view);
+    } catch (Exception error) {
+      Logger.printInfo(() -> "Could not handle Jam player control", error);
+      return false;
+    }
+  }
+
+  private static boolean playButtonSafely(View view) {
     if (!participant()) return false;
     String name = "";
     try {
       name = view.getResources().getResourceEntryName(view.getId());
-    } catch (Exception ignored) {}
+    } catch (android.content.res.Resources.NotFoundException ignored) {
+      // Some native controls have IDs without a resource entry name.
+    }
     if (
       "player_control_next_button".equals(name) ||
       "player_control_previous_button".equals(name)
@@ -138,7 +167,10 @@ public final class JamPlayback {
     if (!name.contains("play_pause_replay")) return false;
     Object item = JamMirror.now();
     if (item != null) queueTap(item);
-    else JamUi.toast(view.getContext(), "Waiting for the host queue");
+    else JamUi.toast(
+      view.getContext(),
+      str("morphe_music_jam_waiting_host_queue")
+    );
     return true;
   }
 
@@ -157,7 +189,7 @@ public final class JamPlayback {
   private static void local(String video) {
     Router r = hostRouter();
     if (r == null) throw new IllegalStateException(
-      "Open a song in YouTube Music first"
+      str("morphe_music_jam_open_song_first")
     );
     r.patch_jamWatch(QueueCommand.watch(video));
   }
@@ -171,14 +203,21 @@ public final class JamPlayback {
     Activity activity = JamUi.activity(null);
     if (activity == null || activity.isFinishing() || !claimDialog()) return;
     String[] labels = queue
-      ? new String[] { "Play on host", "Quit Jam and play locally" }
+      ? new String[] {
+          str("morphe_music_jam_play_on_host"),
+          str("morphe_music_jam_quit_and_play"),
+        }
       : new String[] {
-          "Play next in Jam",
-          "Add to Jam queue",
-          "Quit Jam and play locally",
+          str("morphe_music_jam_play_next"),
+          str("morphe_music_jam_add_to_queue"),
+          str("morphe_music_jam_quit_and_play"),
         };
     AlertDialog popup = new AlertDialog.Builder(activity)
-      .setTitle(queue ? "Play this Jam track" : "Choose where to play")
+      .setTitle(
+        queue
+          ? str("morphe_music_jam_play_track")
+          : str("morphe_music_jam_choose_playback")
+      )
       .setItems(labels, (d, index) -> {
         if (index == labels.length - 1) {
           JamUi.call(activity, JamUi.command("END"), response -> {
@@ -222,7 +261,7 @@ public final class JamPlayback {
           JamUi.toast(activity, e.getMessage());
         }
       })
-      .setNegativeButton("Cancel", null)
+      .setNegativeButton(str("morphe_music_jam_cancel"), null)
       .setOnDismissListener(d -> releaseDialog())
       .create();
     popup.show();

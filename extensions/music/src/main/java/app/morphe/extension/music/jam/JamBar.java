@@ -1,5 +1,7 @@
 package app.morphe.extension.music.jam;
 
+import static app.morphe.extension.shared.StringRef.str;
+
 import android.content.Context;
 import android.util.AttributeSet;
 import android.view.*;
@@ -93,12 +95,12 @@ public final class JamBar extends LinearLayout {
     subtitle.setText(JamPanel.status(view));
     action.setText(
       "Host".equals(role)
-        ? "Manage"
+        ? str("morphe_music_jam_manage")
         : "Participant".equals(role)
-          ? "Details"
+          ? str("morphe_music_jam_details")
           : "Joining".equals(role)
-            ? "Cancel"
-            : "Open"
+            ? str("morphe_music_jam_cancel")
+            : str("morphe_music_jam_open")
     );
     boolean busy = JamPanel.waiting(view);
     progress.setVisibility(busy ? VISIBLE : GONE);

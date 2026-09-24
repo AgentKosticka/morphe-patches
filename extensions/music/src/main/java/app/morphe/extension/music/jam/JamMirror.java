@@ -1,6 +1,9 @@
 package app.morphe.extension.music.jam;
 
+import static app.morphe.extension.shared.StringRef.str;
+
 import android.content.Context;
+import app.morphe.extension.shared.Logger;
 import app.morphe.jam.ipc.QueueEdits;
 import java.util.*;
 import org.json.*;
@@ -49,6 +52,7 @@ public final class JamMirror {
     try {
       access = YtmBridge.access();
     } catch (Exception e) {
+      Logger.printDebug(() -> "Jam queue bridge is not ready", e);
       return;
     }
     access.patch_jamViewThread(() -> {
@@ -199,14 +203,10 @@ public final class JamMirror {
   private static String nowText(String key) {
     JSONObject view = snapshot;
     int index = current;
-    try {
-      JSONArray rows = view == null ? null : view.optJSONArray("items");
-      return rows == null || index < 0 || index >= rows.length()
-        ? null
-        : rows.getJSONObject(index).optString(key, "");
-    } catch (Exception ignored) {
-      return null;
-    }
+    JSONArray rows = view == null ? null : view.optJSONArray("items");
+    JSONObject row =
+      rows == null || index < 0 ? null : rows.optJSONObject(index);
+    return row == null ? null : row.optString(key, "");
   }
 
   public static int current(Object list) {
@@ -252,6 +252,7 @@ public final class JamMirror {
       );
       return true;
     } catch (Exception e) {
+      Logger.printInfo(() -> "Could not remove Jam queue item", e);
       return false;
     }
   }
@@ -268,7 +269,7 @@ public final class JamMirror {
           .put("lane", lane)
       );
     } catch (Exception e) {
-      JamUi.toast(context, "Queue changed; try the gesture again");
+      JamUi.toast(context, str("morphe_music_jam_queue_changed_gesture"));
     }
     return true;
   }
@@ -311,7 +312,12 @@ public final class JamMirror {
       try {
         edits.complete(new JSONObject());
         render();
-      } catch (Exception ignored) {}
+      } catch (Exception cleanupError) {
+        Logger.printInfo(
+          () -> "Could not roll back Jam queue edit",
+          cleanupError
+        );
+      }
       JamUi.toast(context, e.getMessage());
       sendNext();
     }
