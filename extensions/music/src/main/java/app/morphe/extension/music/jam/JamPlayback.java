@@ -1,5 +1,13 @@
+/*
+ * Copyright 2026 Morphe.
+ * https://github.com/MorpheApp/morphe-patches/pull/3014
+ *
+ * See the included NOTICE file for GPLv3 Section 7 terms that apply to this code.
+ */
+
 package app.morphe.extension.music.jam;
 
+import app.morphe.extension.shared.Utils;
 import static app.morphe.extension.shared.StringRef.str;
 
 import android.app.*;
@@ -53,7 +61,7 @@ public final class JamPlayback {
   public static void refresh() {
     if (refreshQueued) return;
     refreshQueued = true;
-    JamUi.main.post(() -> {
+    Utils.runOnMainThread(() -> {
       refreshQueued = false;
       if (refreshing) return;
       refreshing = true;
@@ -107,7 +115,7 @@ public final class JamPlayback {
     capture(owner);
     String video = QueueCommand.watchVideo(bytes);
     if (video == null || !participant()) return false;
-    JamUi.main.post(() ->
+    Utils.runOnMainThread(() ->
       choices(video, null, () -> owner.patch_jamDispatch(endpoint, map), false)
     );
     return true;
@@ -116,7 +124,7 @@ public final class JamPlayback {
   public static boolean queueTap(Object item) {
     if (!participant()) return false;
     if (JamMirror.selection(item) < 0) {
-      JamUi.main.post(() -> {
+      Utils.runOnMainThread(() -> {
         Activity activity = JamUi.activity(null);
         if (activity != null) JamUi.toast(
           activity,
@@ -129,7 +137,7 @@ public final class JamPlayback {
       YtmBridge.QueueAccess a = YtmBridge.access();
       String video = a.patch_jamVideoId(item),
         id = Long.toString(a.patch_jamItemId(item));
-      JamUi.main.post(() -> choices(video, id, () -> local(video), true));
+      Utils.runOnMainThread(() -> choices(video, id, () -> local(video), true));
       return true;
     } catch (Exception e) {
       Logger.printInfo(() -> "Could not open Jam queue choice", e);
@@ -233,7 +241,7 @@ public final class JamPlayback {
               JamUi.latest = idle;
               JamClock.clear();
               JamMirror.accept(activity, idle);
-              JamUi.main.post(() -> {
+              Utils.runOnMainThread(() -> {
                 try {
                   playLocal.run();
                 } catch (Exception e) {
@@ -282,10 +290,10 @@ public final class JamPlayback {
         JamUi.latest = idle;
         JamClock.clear();
         JamMirror.accept(activity, idle);
-        JamUi.main.post(() -> {
+        Utils.runOnMainThread(() -> {
           try {
             local(video);
-            JamUi.main.postDelayed(
+            Utils.runOnMainThreadDelayed(
               () -> JamClock.seekLocalWhenReady(video, position, 50),
               300
             );

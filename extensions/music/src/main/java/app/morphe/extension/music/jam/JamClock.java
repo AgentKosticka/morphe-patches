@@ -1,5 +1,13 @@
+/*
+ * Copyright 2026 Morphe.
+ * https://github.com/MorpheApp/morphe-patches/pull/3014
+ *
+ * See the included NOTICE file for GPLv3 Section 7 terms that apply to this code.
+ */
+
 package app.morphe.extension.music.jam;
 
+import app.morphe.extension.shared.Utils;
 import static app.morphe.extension.shared.StringRef.str;
 
 import android.app.*;
@@ -88,7 +96,7 @@ public final class JamClock {
               controls.play();
             }
           }
-          JamUi.main.postDelayed(this, 100);
+          Utils.runOnMainThreadDelayed(this, 100);
         } catch (Exception error) {
           playing.completeExceptionally(error);
         }
@@ -99,7 +107,7 @@ public final class JamClock {
     if (state.getActiveQueueItemId() != itemId) controls.skipToQueueItem(
       itemId
     );
-    JamUi.main.post(confirm);
+    Utils.runOnMainThread(confirm);
     try {
       playing.get(8, TimeUnit.SECONDS);
     } catch (TimeoutException error) {
@@ -132,7 +140,7 @@ public final class JamClock {
       else current.getTransportControls().skipToPrevious();
       return null;
     });
-    JamUi.main.post(task);
+    Utils.runOnMainThread(task);
     try {
       task.get(5, TimeUnit.SECONDS);
     } finally {
@@ -201,7 +209,7 @@ public final class JamClock {
       Math.min(4000, Math.max(0, next.optLong("age")));
     if (!ticking) {
       ticking = true;
-      JamUi.main.post(tick);
+      Utils.runOnMainThread(tick);
     }
   }
 
@@ -238,7 +246,7 @@ public final class JamClock {
         } catch (Exception error) {
           Logger.printDebug(() -> "Could not update Jam time bar", error);
         }
-      JamUi.main.postDelayed(this, 200);
+      Utils.runOnMainThreadDelayed(this, 200);
     }
   };
 
@@ -267,7 +275,7 @@ public final class JamClock {
     if (duration <= 0) return true;
     long at = Math.max(0, Math.min(duration - 1, target));
     String video = sample.optString("videoId");
-    JamUi.main.post(() -> {
+    Utils.runOnMainThread(() -> {
       Activity a = JamUi.activity(null);
       if (a == null || a.isFinishing() || !JamPlayback.claimDialog()) return;
       String time = String.format(
@@ -322,7 +330,7 @@ public final class JamClock {
       c.getTransportControls().seekTo(position);
       return null;
     });
-    JamUi.main.post(task);
+    Utils.runOnMainThread(task);
     task.get(5, TimeUnit.SECONDS);
   }
 
@@ -336,7 +344,7 @@ public final class JamClock {
       controller.getTransportControls().seekTo(position);
       return;
     }
-    if (attempts > 0) JamUi.main.postDelayed(
+    if (attempts > 0) Utils.runOnMainThreadDelayed(
       () -> seekLocalWhenReady(video, position, attempts - 1),
       200
     );

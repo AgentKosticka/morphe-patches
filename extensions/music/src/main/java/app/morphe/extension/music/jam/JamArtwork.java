@@ -1,12 +1,33 @@
+/*
+ * Copyright 2026 Morphe.
+ * https://github.com/MorpheApp/morphe-patches/pull/3014
+ *
+ * See the included NOTICE file for GPLv3 Section 7 terms that apply to this code.
+ */
+
 package app.morphe.extension.music.jam;
 
-import android.graphics.*;
-import android.graphics.drawable.*;
+import android.graphics.Bitmap;
+import android.graphics.BitmapFactory;
+import android.graphics.drawable.Drawable;
 import android.widget.ImageView;
-import java.io.*;
-import java.net.*;
-import java.util.*;
-import java.util.concurrent.*;
+
+import androidx.annotation.Nullable;
+
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
+import java.io.InputStream;
+import java.net.HttpURLConnection;
+import java.net.URL;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.Map;
+import java.util.Set;
+import java.util.WeakHashMap;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+
+import app.morphe.extension.shared.Utils;
 
 /** Updates the existing native artwork view; caches one bounded public thumbnail. */
 public final class JamArtwork {
@@ -15,9 +36,9 @@ public final class JamArtwork {
   private static final Set<ImageView> views = Collections.newSetFromMap(
     new WeakHashMap<>()
   );
-  private static final ExecutorService loader =
-    Executors.newSingleThreadExecutor();
+  private static final ExecutorService loader = Executors.newSingleThreadExecutor();
   private static String url = "";
+  @Nullable
   private static Bitmap picture;
 
   private static void retain(ImageView view) {
@@ -42,10 +63,9 @@ public final class JamArtwork {
     url = "";
     picture = null;
     JamPalette.clear();
-    for (Map.Entry<ImageView, Drawable> entry : new ArrayList<>(
-      originals.entrySet()
-    ))
+    for (Map.Entry<ImageView, Drawable> entry : new ArrayList<>(originals.entrySet())) {
       entry.getKey().setImageDrawable(entry.getValue());
+    }
     originals.clear();
   }
 
@@ -55,9 +75,7 @@ public final class JamArtwork {
     picture = null;
     loader.execute(() -> {
       try {
-        HttpURLConnection connection = (HttpURLConnection) new URL(
-          value
-        ).openConnection();
+        HttpURLConnection connection = (HttpURLConnection) new URL(value).openConnection();
         connection.setConnectTimeout(5000);
         connection.setReadTimeout(5000);
         connection.setInstanceFollowRedirects(false);
@@ -78,6 +96,7 @@ public final class JamArtwork {
         } finally {
           connection.disconnect();
         }
+
         BitmapFactory.Options options = new BitmapFactory.Options();
         options.inJustDecodeBounds = true;
         BitmapFactory.decodeByteArray(bytes, 0, bytes.length, options);
@@ -86,7 +105,10 @@ public final class JamArtwork {
           options.outHeight <= 0 ||
           options.outWidth > 8192 ||
           options.outHeight > 8192
-        ) return;
+        ) {
+          return;
+        }
+
         options.inJustDecodeBounds = false;
         options.inSampleSize = Math.max(
           1,
@@ -98,7 +120,7 @@ public final class JamArtwork {
           bytes.length,
           options
         );
-        JamUi.main.post(() -> {
+        Utils.runOnMainThread(() -> {
           if (!value.equals(url) || !JamMirror.active()) return;
           picture = result;
           JamPalette.update(result);

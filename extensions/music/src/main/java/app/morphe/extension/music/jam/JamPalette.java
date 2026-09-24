@@ -1,9 +1,18 @@
+/*
+ * Copyright 2026 Morphe.
+ * https://github.com/MorpheApp/morphe-patches/pull/3014
+ *
+ * See the included NOTICE file for GPLv3 Section 7 terms that apply to this code.
+ */
+
 package app.morphe.extension.music.jam;
 
 import android.graphics.Bitmap;
 import java.lang.ref.WeakReference;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+
+import app.morphe.extension.shared.Utils;
 
 /** Uses YTM's extractor and palette stream, preserving its native animations. */
 public final class JamPalette {
@@ -39,7 +48,7 @@ public final class JamPalette {
     worker.execute(() -> {
       try {
         Object result = target.patch_jamExtract(bitmap);
-        JamUi.main.post(() -> {
+        Utils.runOnMainThread(() -> {
           if (
             token != generation || !JamMirror.active() || source.get() != target
           ) return;
