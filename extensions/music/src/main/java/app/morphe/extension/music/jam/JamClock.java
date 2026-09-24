@@ -7,19 +7,30 @@
 
 package app.morphe.extension.music.jam;
 
-import app.morphe.extension.shared.Utils;
 import static app.morphe.extension.shared.StringRef.str;
 
-import android.app.*;
+import android.app.Activity;
+import android.app.AlertDialog;
 import android.media.MediaMetadata;
-import android.media.session.*;
+import android.media.session.MediaController;
+import android.media.session.MediaSession;
+import android.media.session.PlaybackState;
 import android.os.SystemClock;
 import android.view.View;
 import app.morphe.extension.music.shared.VideoInformation;
 import app.morphe.extension.shared.Logger;
-import java.util.*;
-import java.util.concurrent.*;
-import org.json.*;
+import app.morphe.extension.shared.Utils;
+import java.util.ArrayList;
+import java.util.Locale;
+import java.util.Map;
+import java.util.UUID;
+import java.util.WeakHashMap;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.FutureTask;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
+import org.json.JSONArray;
+import org.json.JSONObject;
 
 /** Host clock samples are separate from queue revisions and use local monotonic time. */
 public final class JamClock {
@@ -96,7 +107,7 @@ public final class JamClock {
               controls.play();
             }
           }
-          Utils.runOnMainThreadDelayed(this, 100);
+          JamUi.main.postDelayed(this, 100);
         } catch (Exception error) {
           playing.completeExceptionally(error);
         }
@@ -107,7 +118,8 @@ public final class JamClock {
     if (state.getActiveQueueItemId() != itemId) controls.skipToQueueItem(
       itemId
     );
-    Utils.runOnMainThread(confirm);
+    // Keep the callback on the handler used to cancel it in the finally block.
+    JamUi.main.post(confirm);
     try {
       playing.get(8, TimeUnit.SECONDS);
     } catch (TimeoutException error) {
@@ -350,7 +362,9 @@ public final class JamClock {
     );
     else {
       Activity a = JamUi.activity(null);
-      if (a != null) JamUi.toast(a, str("morphe_music_jam_seek_not_ready"));
+      if (a != null) Utils.showToastLong(
+        str("morphe_music_jam_seek_not_ready")
+      );
     }
   }
 }

@@ -7,15 +7,19 @@
 
 package app.morphe.extension.music.jam;
 
-import app.morphe.extension.shared.Utils;
 import static app.morphe.extension.shared.StringRef.str;
 
-import android.app.*;
+import android.app.Activity;
+import android.app.AlertDialog;
 import android.view.View;
 import app.morphe.extension.shared.Logger;
+import app.morphe.extension.shared.Utils;
 import java.lang.ref.WeakReference;
-import java.util.*;
-import org.json.*;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.Set;
+import java.util.WeakHashMap;
+import org.json.JSONObject;
 
 /** Native command choices and native now-playing adapter refresh. No local audio mirror. */
 public final class JamPlayback {
@@ -126,8 +130,7 @@ public final class JamPlayback {
     if (JamMirror.selection(item) < 0) {
       Utils.runOnMainThread(() -> {
         Activity activity = JamUi.activity(null);
-        if (activity != null) JamUi.toast(
-          activity,
+        if (activity != null) Utils.showToastLong(
           str("morphe_music_jam_waiting_host_queue")
         );
       });
@@ -175,10 +178,7 @@ public final class JamPlayback {
     if (!name.contains("play_pause_replay")) return false;
     Object item = JamMirror.now();
     if (item != null) queueTap(item);
-    else JamUi.toast(
-      view.getContext(),
-      str("morphe_music_jam_waiting_host_queue")
-    );
+    else Utils.showToastLong(str("morphe_music_jam_waiting_host_queue"));
     return true;
   }
 
@@ -230,7 +230,7 @@ public final class JamPlayback {
         if (index == labels.length - 1) {
           JamUi.call(activity, JamUi.command("END"), response -> {
             if (!response.optBoolean("ok")) {
-              JamUi.toast(activity, response.optString("error"));
+              Utils.showToastLong(response.optString("error"));
               return;
             }
             try {
@@ -245,11 +245,11 @@ public final class JamPlayback {
                 try {
                   playLocal.run();
                 } catch (Exception e) {
-                  JamUi.toast(activity, e.getMessage());
+                  Utils.showToastLong(e.getMessage());
                 }
               });
             } catch (Exception e) {
-              JamUi.toast(activity, e.getMessage());
+              Utils.showToastLong(e.getMessage());
             }
           });
           return;
@@ -260,13 +260,12 @@ public final class JamPlayback {
           ).put("videoId", video);
           if (item != null) command.put("item", item);
           JamUi.call(activity, command, response -> {
-            if (!response.optBoolean("ok")) JamUi.toast(
-              activity,
+            if (!response.optBoolean("ok")) Utils.showToastLong(
               response.optString("error")
             );
           });
         } catch (Exception e) {
-          JamUi.toast(activity, e.getMessage());
+          Utils.showToastLong(e.getMessage());
         }
       })
       .setNegativeButton(str("morphe_music_jam_cancel"), null)
@@ -279,7 +278,7 @@ public final class JamPlayback {
   static void leaveAndPlay(Activity activity, String video, long position) {
     JamUi.call(activity, JamUi.command("END"), response -> {
       if (!response.optBoolean("ok")) {
-        JamUi.toast(activity, response.optString("error"));
+        Utils.showToastLong(response.optString("error"));
         return;
       }
       try {
@@ -298,11 +297,11 @@ public final class JamPlayback {
               300
             );
           } catch (Exception e) {
-            JamUi.toast(activity, e.getMessage());
+            Utils.showToastLong(e.getMessage());
           }
         });
       } catch (Exception e) {
-        JamUi.toast(activity, e.getMessage());
+        Utils.showToastLong(e.getMessage());
       }
     });
   }

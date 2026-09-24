@@ -27,6 +27,9 @@ Second \"item\" text"</string>
     <string name="morphe_music_jam_companion_package_summary">Choose the installed companion app used for nearby queue sharing.</string>
 
     <string name="morphe_music_jam_package_message">Use an installed companion package. Pairing requires your approval and a local capability token.</string>
+    <string name="morphe_music_jam_wifi_title">Turn on Wi-Fi?</string>
+    <string name="morphe_music_jam_wifi_message">Turn on Wi-Fi, then try starting or joining the Jam again.</string>
+    <string name="morphe_music_jam_wifi_settings">Open Wi-Fi settings</string>
     <string name="morphe_music_jam_cancel">Cancel</string>
     <string name="morphe_music_jam_use_package">Use package</string>
     <string name="morphe_music_jam_invalid_package">Enter a valid Android package name</string>

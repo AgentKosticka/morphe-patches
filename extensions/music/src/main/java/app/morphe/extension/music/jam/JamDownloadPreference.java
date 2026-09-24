@@ -14,6 +14,7 @@ import android.content.Intent;
 import android.net.Uri;
 import android.preference.Preference;
 import android.util.AttributeSet;
+import app.morphe.extension.shared.Utils;
 
 /** Opens the latest Jam Layer release in the user's browser. */
 @SuppressWarnings("deprecation")
@@ -33,7 +34,7 @@ public final class JamDownloadPreference extends Preference {
     try {
       getContext().startActivity(new Intent(Intent.ACTION_VIEW, RELEASES));
     } catch (RuntimeException error) {
-      JamUi.toast(getContext(), str("morphe_music_jam_no_browser"));
+      Utils.showToastLong(str("morphe_music_jam_no_browser"));
     }
   }
 }

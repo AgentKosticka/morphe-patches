@@ -8,10 +8,13 @@
 package app.morphe.patches.music.interaction.jam
 
 import app.morphe.patcher.extensions.InstructionExtensions.addInstructions
+import app.morphe.patcher.extensions.InstructionExtensions.addInstructionsWithLabels
+import app.morphe.patcher.extensions.InstructionExtensions.getInstruction
 import app.morphe.patcher.extensions.InstructionExtensions.instructions
 import app.morphe.patcher.extensions.InstructionExtensions.replaceInstruction
 import app.morphe.patcher.methodCall
 import app.morphe.patcher.patch.BytecodePatchContext
+import app.morphe.patcher.util.smali.ExternalLabel
 import app.morphe.util.findInstructionIndicesReversedOrThrow
 import app.morphe.util.getMutableMethod
 import app.morphe.util.indexOfFirstInstructionOrThrow
@@ -495,6 +498,20 @@ private fun BytecodePatchContext.installAutoplayUi(abi: AutoplayUiAbi) {
   val refresh = abi.refresh.getMutableMethod()
   val name = refresh.name
   refresh.setName("patch_jamLocalAutoplayUi")
+  // Participants need the native boundary even when their local radio mode hides it.
+  // The wrapper below still sets the mirrored suggestion count and clears an empty header.
+  refresh.addInstructionsWithLabels(
+      0,
+      """
+      invoke-static {}, $extension->active()Z
+      move-result v0
+      if-eqz v0, :local
+      const/4 v${abi.headerIndexRegister}, 0x0
+      goto :header
+    """,
+      ExternalLabel("local", refresh.getInstruction(0)),
+      ExternalLabel("header", refresh.getInstruction(abi.headerStart)),
+  )
   owner.addBridge(
       name,
       emptyList(),
@@ -516,6 +533,10 @@ private fun BytecodePatchContext.installAutoplayUi(abi: AutoplayUiAbi) {
           """
         iget-object v0, p0, ${abi.limiter}
         ${invokeKind(abi.setLimit)} {v0, p1}, ${abi.setLimit}
+        if-nez p1, :done
+        iget-object v0, p0, ${abi.header}
+        ${invokeKind(abi.clearHeader)} {v0}, ${abi.clearHeader}
+        :done
         return-void
     """,
   )

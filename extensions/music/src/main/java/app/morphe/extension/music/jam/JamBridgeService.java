@@ -10,10 +10,9 @@ package app.morphe.extension.music.jam;
 import android.app.Service;
 import android.content.Intent;
 import android.os.IBinder;
-
-import org.json.JSONArray;
-import org.json.JSONObject;
-
+import app.morphe.jam.ipc.BridgeProtocol;
+import app.morphe.jam.ipc.IJamBridge;
+import app.morphe.jam.ipc.Trust;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.Map;
@@ -23,10 +22,8 @@ import java.util.concurrent.Callable;
 import java.util.concurrent.FutureTask;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
-
-import app.morphe.jam.ipc.BridgeProtocol;
-import app.morphe.jam.ipc.IJamBridge;
-import app.morphe.jam.ipc.Trust;
+import org.json.JSONArray;
+import org.json.JSONObject;
 
 public final class JamBridgeService extends Service {
 

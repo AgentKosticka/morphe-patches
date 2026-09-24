@@ -11,9 +11,15 @@ import static app.morphe.extension.shared.StringRef.str;
 
 import android.content.Context;
 import app.morphe.extension.shared.Logger;
+import app.morphe.extension.shared.Utils;
 import app.morphe.jam.ipc.QueueEdits;
-import java.util.*;
-import org.json.*;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
+import java.util.Set;
+import java.util.WeakHashMap;
+import org.json.JSONArray;
+import org.json.JSONObject;
 
 /** Native adapters display authoritative state plus unacknowledged local gestures. */
 public final class JamMirror {
@@ -118,7 +124,7 @@ public final class JamMirror {
         edits.accept(view);
         render();
       } catch (Exception e) {
-        android.util.Log.e("MorpheJam", "Native mirror failed", e);
+        Logger.printException(() -> "Native mirror failed", e);
       }
     });
   }
@@ -276,7 +282,7 @@ public final class JamMirror {
           .put("lane", lane)
       );
     } catch (Exception e) {
-      JamUi.toast(context, str("morphe_music_jam_queue_changed_gesture"));
+      Utils.showToastLong(str("morphe_music_jam_queue_changed_gesture"));
     }
     return true;
   }
@@ -289,7 +295,7 @@ public final class JamMirror {
         render();
         sendNext();
       } catch (Exception e) {
-        JamUi.toast(context, e.getMessage());
+        Utils.showToastLong(e.getMessage());
       }
     });
   }
@@ -307,10 +313,9 @@ public final class JamMirror {
           edits.complete(response);
           render();
         } catch (Exception e) {
-          android.util.Log.e("MorpheJam", "Edit acknowledgement failed", e);
+          Logger.printException(() -> "Edit acknowledgement failed", e);
         }
-        if (!response.optBoolean("ok")) JamUi.toast(
-          context,
+        if (!response.optBoolean("ok")) Utils.showToastLong(
           response.optString("error")
         );
         sendNext();
@@ -325,7 +330,7 @@ public final class JamMirror {
           cleanupError
         );
       }
-      JamUi.toast(context, e.getMessage());
+      Utils.showToastLong(e.getMessage());
       sendNext();
     }
   }

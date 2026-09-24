@@ -7,8 +7,10 @@
 
 package app.morphe.extension.music.jam;
 
+import android.content.res.Resources;
 import android.text.TextUtils;
 import android.widget.TextView;
+import app.morphe.extension.shared.Utils;
 import java.util.ArrayList;
 import java.util.Map;
 import java.util.WeakHashMap;

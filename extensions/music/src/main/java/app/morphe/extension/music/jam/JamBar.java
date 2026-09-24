@@ -17,10 +17,9 @@ import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.ProgressBar;
 import android.widget.TextView;
-
-import org.json.JSONObject;
-
+import app.morphe.extension.shared.Utils;
 import java.util.function.Consumer;
+import org.json.JSONObject;
 
 /** A real child of YTM's player bottom sheet, never an overlay. */
 public final class JamBar extends LinearLayout {

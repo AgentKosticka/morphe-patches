@@ -8,11 +8,10 @@
 package app.morphe.extension.music.jam;
 
 import android.graphics.Bitmap;
+import app.morphe.extension.shared.Utils;
 import java.lang.ref.WeakReference;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
-
-import app.morphe.extension.shared.Utils;
 
 /** Uses YTM's extractor and palette stream, preserving its native animations. */
 public final class JamPalette {

@@ -11,9 +11,8 @@ import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.graphics.drawable.Drawable;
 import android.widget.ImageView;
-
 import androidx.annotation.Nullable;
-
+import app.morphe.extension.shared.Utils;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
@@ -27,8 +26,6 @@ import java.util.WeakHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
-import app.morphe.extension.shared.Utils;
-
 /** Updates the existing native artwork view; caches one bounded public thumbnail. */
 public final class JamArtwork {
 
@@ -36,8 +33,10 @@ public final class JamArtwork {
   private static final Set<ImageView> views = Collections.newSetFromMap(
     new WeakHashMap<>()
   );
-  private static final ExecutorService loader = Executors.newSingleThreadExecutor();
+  private static final ExecutorService loader =
+    Executors.newSingleThreadExecutor();
   private static String url = "";
+
   @Nullable
   private static Bitmap picture;
 
@@ -63,7 +62,9 @@ public final class JamArtwork {
     url = "";
     picture = null;
     JamPalette.clear();
-    for (Map.Entry<ImageView, Drawable> entry : new ArrayList<>(originals.entrySet())) {
+    for (Map.Entry<ImageView, Drawable> entry : new ArrayList<>(
+      originals.entrySet()
+    )) {
       entry.getKey().setImageDrawable(entry.getValue());
     }
     originals.clear();
@@ -75,7 +76,9 @@ public final class JamArtwork {
     picture = null;
     loader.execute(() -> {
       try {
-        HttpURLConnection connection = (HttpURLConnection) new URL(value).openConnection();
+        HttpURLConnection connection = (HttpURLConnection) new URL(
+          value
+        ).openConnection();
         connection.setConnectTimeout(5000);
         connection.setReadTimeout(5000);
         connection.setInstanceFollowRedirects(false);

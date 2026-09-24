@@ -9,12 +9,18 @@ package app.morphe.extension.music.jam;
 
 import static app.morphe.extension.shared.StringRef.str;
 
-import android.app.*;
-import android.content.*;
+import android.app.Activity;
+import android.app.AlertDialog;
+import android.content.Context;
 import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
-import android.view.*;
-import android.widget.*;
+import android.view.Gravity;
+import android.view.View;
+import android.widget.Button;
+import android.widget.LinearLayout;
+import android.widget.ProgressBar;
+import android.widget.Switch;
+import android.widget.TextView;
 import app.morphe.extension.shared.Logger;
 import java.util.function.Consumer;
 import org.json.JSONObject;
