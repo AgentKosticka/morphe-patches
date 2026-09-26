@@ -34,15 +34,15 @@
  *
  * The native ABI resolver is still substantial because Jam mirrors YTM's native observable queue,
  * item models, gestures and player components. Removing literal obfuscation names does not prove
- * compatibility with uninspected versions. The patch remains opt-in and limited to 9.15.51 until
- * additional APKs and user testing provide evidence for broader support.
+ * compatibility with uninspected versions. Runtime integration remains opt-in. Compatibility is
+ * restricted to the exact APK versions that have passed the local validation gates.
  *
  * ## Compatibility and release gates
  *
- * The supported target remains **YT Music 9.15.51 ARM64**. The supplied 9.34.52, 9.35.54 and
- * 9.36.50 APKs are candidates, not supported targets. Their initial full-patch attempts rejected an
- * ambiguous native menu dispatcher field. This is a compatibility failure, not permission to choose
- * the first field.
+ * YT Music 9.15.51 ARM64 remains the baseline. Versions 9.35.54, 9.36.50 and 9.37.54 are
+ * experimental targets with local patch, SDK DEX verification and APK construction evidence.
+ * The user reports device tests passing on 9.15.51 and 9.37.54; the other two remain pending.
+ * See docs/jam-validation.md for the validation evidence and remaining limitations.
  *
  * Discovery follows `APK -> Fingerprint -> JamQueueAbi/JamUiAbi -> validation -> installation`.
  * Dynamic fingerprints may consume earlier resolved types. Android calls, diagnostics, resources,
@@ -58,10 +58,10 @@
  * evidence. Run it with `-PjamApk` and `-PjamOutput`; omitting the APK skips fixture tests and
  * cannot satisfy release gates.
  *
- * Every additional advertised version needs unique resolution, ABI validation, full patch
- * application, SDK bytecode verification, APK construction, installation and the same two-device
- * smoke matrix as the baseline. Keep `compatibleWith` restricted until all these pass for that
- * exact version.
+ * Every additional experimental version needs unique resolution, ABI validation, full patch
+ * application, SDK bytecode verification and APK construction. Promotion from experimental support
+ * also requires installation and the same two-device smoke matrix as the baseline. Preserve the
+ * experimental target flag until that evidence exists for the exact version.
  *
  * The local Binder bridge advertises additive protocol version 1 and capabilities
  * `queue-revisions`, `stable-item-ids` and `stale-edit-rejection`. Missing envelopes are treated as
@@ -70,7 +70,7 @@
  * to a locally generated capability token. Companion forks may use their own signing keys without
  * modifying the patch.
  *
- * Publish only after baseline device results and exact Companion interoperability pass. Then test
+ * Experimental prereleases may be published after the local gates for user device testing. Test
  * the published prerelease through a clean Morphe Manager setup, including source metadata, patch
  * discovery, dependency resolution, APK building, installation, two-device pairing and reconnect.
  * Local artifacts do not satisfy that consumer gate. Keep the upstream PR draft and its review
@@ -89,6 +89,7 @@ import app.morphe.patcher.patch.bytecodePatch
 import app.morphe.patcher.patch.resourcePatch
 import app.morphe.patches.all.misc.resources.resourceMappingPatch
 import app.morphe.patches.music.misc.extension.sharedExtensionPatch
+import app.morphe.patches.music.misc.playservice.versionCheckPatch
 import app.morphe.patches.music.misc.settings.PreferenceScreen
 import app.morphe.patches.music.misc.settings.settingsPatch
 import app.morphe.patches.music.shared.Constants.COMPATIBILITY_YOUTUBE_MUSIC
@@ -97,9 +98,25 @@ import app.morphe.patches.music.video.information.musicVideoInformationPatch
 import app.morphe.patches.shared.misc.settings.preference.NonInteractivePreference
 import app.morphe.patches.shared.misc.settings.preference.PreferenceScreenPreference
 import app.morphe.patches.shared.misc.settings.preference.SwitchPreference
+import java.util.logging.Logger
+
+internal val supportedJamVersions = setOf("9.15.51", "9.35.54", "9.36.50", "9.37.54")
+
+internal fun isSupportedJamVersion(version: String): Boolean = version in supportedJamVersions
+
+private fun warnUnsupportedJamVersion(version: String) {
+  Logger.getLogger("Jam queue sharing").warning(
+      "Skipping Jam queue sharing on YouTube Music $version. " +
+          "Supported versions: ${supportedJamVersions.joinToString()}. No Jam changes will be applied."
+  )
+}
 
 private val jamResources = resourcePatch {
+  dependsOn(versionCheckPatch)
   execute {
+    if (!isSupportedJamVersion(packageMetadata.versionName)) {
+      return@execute warnUnsupportedJamVersion(packageMetadata.versionName)
+    }
     document("AndroidManifest.xml").use { doc ->
       val permissions = doc.getElementsByTagName("uses-permission")
       if (
@@ -157,7 +174,10 @@ val jamQueueProbePatch =
     bytecodePatch(
         name = "Jam queue sharing",
         description =
-            "Adds a native Jam queue panel and authenticated bridge. Experimental; validated on YTM 9.15.51. Root installation is not supported.",
+            "Shares the host queue and playback controls through an authenticated Jam bridge. " +
+                "Supports YouTube Music 9.15.51; 9.35.54, 9.36.50 and 9.37.54 are experimental " +
+                "and require device testing. Other versions are skipped with a warning. " +
+                "Root installation is not supported.",
         default = true,
     ) {
       dependsOn(
@@ -166,6 +186,7 @@ val jamQueueProbePatch =
           jamResources,
           musicVideoInformationPatch,
           resourceMappingPatch,
+          versionCheckPatch,
       )
       compatibleWith(
           Compatibility(
@@ -173,11 +194,17 @@ val jamQueueProbePatch =
               packageName = "com.google.android.apps.youtube.music",
               apkFileType = COMPATIBILITY_YOUTUBE_MUSIC.apkFileType,
               signatures = COMPATIBILITY_YOUTUBE_MUSIC.signatures,
-              targets = COMPATIBILITY_YOUTUBE_MUSIC.targets.filter { it.version == "9.15.51" },
+              targets =
+                  COMPATIBILITY_YOUTUBE_MUSIC.targets.filter {
+                    it.version in supportedJamVersions
+                  },
           )
       )
 
       execute {
+        if (!isSupportedJamVersion(packageMetadata.versionName)) {
+          return@execute warnUnsupportedJamVersion(packageMetadata.versionName)
+        }
         val baseQueue = resolveJamQueueAbi()
         val ui = resolveJamUiAbi(baseQueue)
         val queue =

@@ -9,13 +9,21 @@ package app.morphe.patches.music.interaction.jam
 
 import app.morphe.patcher.Patcher
 import app.morphe.patcher.PatcherConfig
+import app.morphe.patcher.extensions.InstructionExtensions.addInstructions
 import app.morphe.patcher.patch.PatchException
 import app.morphe.patcher.patch.bytecodePatch
+import app.morphe.patches.all.misc.resources.resourceMappingPatch
+import app.morphe.patcher.util.proxy.mutableTypes.MutableField.Companion.toMutable
+import app.morphe.util.getMutableMethod
 import app.morphe.util.matchSingle
+import com.android.tools.smali.dexlib2.AccessFlags
+import com.android.tools.smali.dexlib2.immutable.ImmutableField
 import kotlin.io.path.createTempDirectory
 import kotlin.io.path.readText
 import kotlin.io.path.walk
 import kotlin.test.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertFailsWith
 import kotlin.test.assertTrue
 import kotlinx.coroutines.flow.collect
@@ -23,9 +31,96 @@ import kotlinx.coroutines.runBlocking
 import org.junit.jupiter.api.Assumptions.assumeTrue
 
 class JamPatchRegressionTest {
+  @Test
+  fun `Jam accepts only the exact validated versions`() {
+    for (version in listOf("9.15.51", "9.35.54", "9.36.50", "9.37.54")) {
+      assertTrue(isSupportedJamVersion(version), version)
+    }
+    for (version in listOf("9.15", "9.15.52", "9.34.52", "9.35.55", "9.37.55", "9.38.1", "10.0.0")) {
+      assertFalse(isSupportedJamVersion(version), version)
+    }
+  }
+
+  @Test
+  fun `both player layouts resolve clicks and share the native state renderer`() {
+    val apkPath = System.getProperty("jamApk")
+    assumeTrue(!apkPath.isNullOrBlank()) { "Pass -PjamApk to verify both native player layouts" }
+    val fixture = bytecodePatch {
+      dependsOn(resourceMappingPatch)
+      execute {
+        val ui = resolveJamUiAbi(resolveJamQueueAbi())
+        val presenter = PlayerMetadataViewsFingerprint.matchSingle().originalClassDef
+        val controls = PlaybackControlViewsFingerprint.matchSingle().originalClassDef
+        val miniClicks = playbackButtonClickFingerprint(presenter.type).matchAll()
+        val fullClicks = playbackControlsClickFingerprint(controls.type).matchAll()
+        for (click in miniClicks + fullClicks) {
+          assertTrue(ui.buttons.any { it.click == click.originalMethod })
+        }
+        // Both surfaces must feed the same renderer. Otherwise only one icon would mirror.
+        for (owner in listOf(presenter, controls)) {
+          assertTrue(owner.fields.any { it.type == ui.playbackIcon.render.definingClass })
+        }
+        assertTrue(ui.playbackIcon.playing != ui.playbackIcon.paused)
+      }
+    }
+    val workspace = createTempDirectory("jam-player-layouts")
+    Patcher(PatcherConfig(kotlin.io.path.Path(apkPath).toFile(), workspace.toFile())).use { patcher ->
+      patcher += setOf(fixture)
+      runBlocking {
+        patcher().collect { result ->
+          assertTrue(result.exception == null, result.exception?.stackTraceToString().orEmpty())
+        }
+      }
+    }
+  }
+
   @Test fun `queue ABI rejects a missing required constructor`() = rejectInvalidConstructor(false)
 
   @Test fun `queue ABI rejects ambiguous constructors`() = rejectInvalidConstructor(true)
+
+  @Test
+  fun `dispatcher resolution ignores unused merged fields and rejects ambiguous enqueue fields`() {
+    val apkPath = System.getProperty("jamApk")
+    assumeTrue(!apkPath.isNullOrBlank()) { "Pass -PjamApk to exercise real APK resolver failures" }
+    val fixture = bytecodePatch {
+      execute {
+        val queue = resolveJamQueueAbi()
+        val manager = mutableClassDefBy(queue.managerType)
+        val extraDispatcher =
+            ImmutableField(
+                    manager.type,
+                    "jamUnusedDispatcher",
+                    queue.menu.dispatcher.type,
+                    AccessFlags.PRIVATE.value,
+                    null,
+                    null,
+                    null,
+                )
+                .toMutable()
+        manager.fields.add(extraDispatcher)
+
+        // A same-type field alone must not change which native dispatcher is selected.
+        assertEquals(queue.menu.dispatcher, resolveJamQueueAbi().menu.dispatcher)
+
+        // This intentionally invalid fixture is inspected only, never serialized or installed.
+        queue.enqueue.getMutableMethod().addInstructions(
+            0,
+            "iget-object v0, p0, $extraDispatcher",
+        )
+        val failure = assertFailsWith<IllegalStateException> { resolveJamQueueAbi() }
+        assertTrue(failure.message.orEmpty().contains("dispatcher field"))
+      }
+    }
+    val workspace = createTempDirectory("jam-dispatcher-resolution")
+    Patcher(PatcherConfig(kotlin.io.path.Path(apkPath).toFile(), workspace.toFile())).use { patcher ->
+      patcher += setOf(fixture)
+      runBlocking {
+        patcher().collect { result ->
+          assertTrue(result.exception == null, result.exception?.stackTraceToString().orEmpty())
+        }
+      }
+    }
+  }
 
   private fun rejectInvalidConstructor(ambiguous: Boolean) {
     val apkPath = System.getProperty("jamApk")

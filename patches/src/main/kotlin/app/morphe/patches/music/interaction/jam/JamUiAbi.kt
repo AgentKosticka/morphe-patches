@@ -39,6 +39,7 @@ internal data class JamUiAbi(
     val artwork: ArtworkAbi,
     val queueRow: QueueRowAbi,
     val buttons: List<ButtonAbi>,
+    val playbackIcon: PlaybackIconAbi,
     val autoplay: AutoplayUiAbi,
 )
 
@@ -120,6 +121,14 @@ internal data class QueueRowAbi(
 
 internal data class ButtonAbi(val type: String, val click: MethodReference)
 
+internal data class PlaybackIconAbi(
+    val render: MethodReference,
+    val view: FieldReference,
+    val constructor: MethodReference,
+    val playing: FieldReference,
+    val paused: FieldReference,
+)
+
 /**
  * Resolves presentation hooks from queue and platform relationships, never host obfuscation names.
  */
@@ -141,6 +150,7 @@ internal fun BytecodePatchContext.resolveJamUiAbi(queue: JamQueueAbi): JamUiAbi 
       artwork,
       queueRow,
       buttons,
+      resolvePlaybackIcon(),
       resolveAutoplayUi(queue),
   )
 }
@@ -279,7 +289,7 @@ private fun BytecodePatchContext.resolvePlayback(): PlaybackAbi {
 
 private fun BytecodePatchContext.resolveCurrentItem(): CurrentItemAbi {
   val source = CurrentPlaybackItemSourceFingerprint.matchSingle()
-  val accessor = source.instructionMatches[1].instruction.getReference<MethodReference>()!!
+  val accessor = source.instructionMatches[0].instruction.getReference<MethodReference>()!!
   require(source.originalClassDef.fields.any { it.type == accessor.definingClass }) {
     "Jam current-item source must be owned by the watch page"
   }
@@ -290,7 +300,9 @@ private fun BytecodePatchContext.resolveNowPlaying(
     current: CurrentItemAbi,
     item: QueueItemAbi,
 ): NowPlayingAbi {
-  val menuMatch = nowPlayingMenuEntryFingerprint(current.type, current.accessor).matchSingle()
+  val watchPage = WatchPageStateFingerprint.matchSingle().originalClassDef
+  val menuMatch =
+      nowPlayingMenuEntryFingerprint(watchPage.type, current.type, current.accessor).matchSingle()
   val menuEntry = menuMatch.originalMethod
   val presenterMatch = nowPlayingRefreshFingerprint(current.accessor).matchSingle()
   val presenter =
@@ -402,10 +414,32 @@ private fun BytecodePatchContext.resolveQueueRow(
 
 private fun BytecodePatchContext.resolveButtons(): List<ButtonAbi> {
   val controls = PlaybackControlViewsFingerprint.matchSingle().originalClassDef
+  val presenter = PlayerMetadataViewsFingerprint.matchSingle().originalClassDef
   return (playbackControlsClickFingerprint(controls.type).matchAll() +
-          playbackButtonClickFingerprint(controls.type).matchAll())
+          playbackButtonClickFingerprint(controls.type).matchAll() +
+          playbackButtonClickFingerprint(presenter.type).matchAll())
       .map { match -> ButtonAbi(match.originalClassDef.type, match.originalMethod) }
       .distinctBy { it.type }
+}
+
+private fun BytecodePatchContext.resolvePlaybackIcon(): PlaybackIconAbi {
+  val controls = PlaybackControlViewsFingerprint.matchSingle().originalClassDef
+  val render = playbackIconFingerprint(controls.fields.map { it.type }.toSet()).matchSingle()
+  val constructor =
+      playbackIconModelConstructorFingerprint(render.originalMethod.parameterTypes.single().toString())
+          .matchSingle()
+          .originalMethod
+  val stateType = constructor.parameterTypes[0].toString()
+  require(AccessFlags.ENUM.isSet(classDefBy(stateType).accessFlags)) {
+    "Jam playback icon state must be an enum"
+  }
+  val view =
+      render.originalClassDef.fields.singleOrNull { it.type == "Landroid/widget/ImageView;" }
+          ?: error("Missing or ambiguous Jam playback icon view")
+  fun state(name: String) =
+      playbackIconStateFingerprint(stateType, name).matchSingle()
+          .instructionMatches[1].instruction.getReference<FieldReference>()!!
+  return PlaybackIconAbi(render.originalMethod, view, constructor, state("PLAYING"), state("PAUSED"))
 }
 
 private fun BytecodePatchContext.implementedInterfaces(type: String): Set<String> {
@@ -454,10 +488,8 @@ private fun BytecodePatchContext.resolveAutoplayUi(queue: JamQueueAbi): Autoplay
   check(headerInstruction.opcode == Opcode.IGET_OBJECT && header.definingClass == owner.type) {
     "Unexpected Jam autoplay header access"
   }
-  val headerStart = refresh.instructionMatches[1].index + 1
-  check(method.getInstruction(headerStart).getReference<FieldReference>() == header) {
-    "Missing Jam autoplay header creation block"
-  }
+  val headerCreation = autoplayHeaderCreationFingerprint(header).match(method, owner)
+  val headerStart = headerCreation.instructionMatches[0].index
   val addHeader =
       method
           .findInstructionIndicesReversedOrThrow(
