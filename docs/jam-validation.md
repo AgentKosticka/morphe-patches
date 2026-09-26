@@ -53,3 +53,30 @@ Local traces are retained in the workspace's `analysis` directory:
 
 Bulk/playlist/offline enqueue, exhaustive Doze/network stress, separate radio-loss
 failover and physical camera validation remain outside the reported acceptance.
+
+## Session lifecycle update — 26 September 2026
+
+The Jam runtime and decoder regression test from Jam-Patches `d79890b` are
+ported here without custom-source release metadata or dependency changes.
+Joining pauses participant audio, leaving keeps it paused, Wi-Fi-off entry is
+allowed, BLE has a connected status, and unsupported queue commands use the
+translatable **Unsupported during Jam** message. Binding and session replies
+update the player promptly, with stale lifecycle replies discarded.
+
+Validation in the matching Jam-Patches checkout passed 46 bridge checks,
+12 timeline checks, nine patch/decoder tests with real APK fixtures, and local
+9.15.51/9.37.54 patch application and SDK DEX verification. The final 9.37.54
+isolated unsigned APK was constructed successfully. These results do not claim
+a standalone build of this PR checkout or manual acceptance of the new YTM UI.
+
+The matching companion lifecycle update is local Jam Layer commit `6a8a828`.
+Its 30 unit tests and companion-only device lifecycle/LAN/Aware/BLE tests passed
+on the two test devices. The updated companion is installed there; its source
+changes are not part of this patches PR. Native YTM playback and rejection UI
+remain subject to the [manual test checklist](session-lifecycle-testing.md).
+
+For this port, the five changed runtime files were compared with `d79890b` and
+match apart from line endings. The PR checkout's 46 bridge and 12 timeline checks
+passed again. A fresh `:patches:buildAndroid`/decoder-test attempt still stops at
+the same 12 shared YouTube/dependency Java errors described above, before the
+decoder Gradle test can run. See local `analysis/jam-pr-session-build.log`.

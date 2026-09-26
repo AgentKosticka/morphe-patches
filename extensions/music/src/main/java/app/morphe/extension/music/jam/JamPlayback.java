@@ -89,11 +89,7 @@ public final class JamPlayback {
   }
 
   private static boolean participant() {
-    JSONObject session = JamUi.latest.optJSONObject("session");
-    return (
-      JamMirror.active() ||
-      (session != null && "Participant".equals(session.optString("role")))
-    );
+    return JamUi.participant();
   }
 
   public static boolean offer(
@@ -106,6 +102,10 @@ public final class JamPlayback {
       return offerPlayback(owner, endpoint, map, bytes);
     } catch (Exception error) {
       Logger.printInfo(() -> "Could not inspect Jam playback command", error);
+      if (participant() && QueueCommand.isPlayback(bytes)) {
+        JamUi.unsupported();
+        return true;
+      }
       return false;
     }
   }
@@ -118,7 +118,14 @@ public final class JamPlayback {
   ) {
     capture(owner);
     String video = QueueCommand.watchVideo(bytes);
-    if (video == null || !participant()) return false;
+    if (!participant()) return false;
+    if (video == null) {
+      if (QueueCommand.isPlayback(bytes)) {
+        JamUi.unsupported();
+        return true;
+      }
+      return false;
+    }
     Utils.runOnMainThread(() ->
       choices(video, null, () -> owner.patch_jamDispatch(endpoint, map), false)
     );
@@ -167,7 +174,9 @@ public final class JamPlayback {
       "mini_player_next_button".equals(name) ||
       "mini_player_previous_button".equals(name)
     ) {
-      String operation = name.endsWith("next_button") ? "SKIP_NEXT" : "SKIP_PREVIOUS";
+      String operation = name.endsWith("next_button")
+        ? "SKIP_NEXT"
+        : "SKIP_PREVIOUS";
       JamUi.edit(view.getContext(), JamUi.command(operation));
       return true;
     }
@@ -204,8 +213,10 @@ public final class JamPlayback {
 
   static boolean isPlayPauseButton(View view) {
     String name = buttonName(view);
-    return "player_control_play_pause_replay_button".equals(name) ||
-      "mini_player_play_pause_replay_button".equals(name);
+    return (
+      "player_control_play_pause_replay_button".equals(name) ||
+      "mini_player_play_pause_replay_button".equals(name)
+    );
   }
 
   private static String buttonName(View view) {
