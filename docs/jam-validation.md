@@ -80,3 +80,20 @@ match apart from line endings. The PR checkout's 46 bridge and 12 timeline check
 passed again. A fresh `:patches:buildAndroid`/decoder-test attempt still stops at
 the same 12 shared YouTube/dependency Java errors described above, before the
 decoder Gradle test can run. See local `analysis/jam-pr-session-build.log`.
+
+
+## Review fixes and device retest — 27 September 2026
+
+Ported the tested Jam-Patches changes through `8b2befa`, including zappybiby's
+13 review comments, contextual song links, host cover artwork and restoration on
+exit. Runtime/patch/test files match that commit byte-for-byte. Release metadata,
+vendored dependencies and subsequent uncommitted artwork work were not imported.
+
+Nine tests passed on both 9.15.51 and 9.37.54 in Jam-Patches, along with SDK DEX
+verification and APK assembly; the final artwork-cache adjustment was rebuilt and
+APK-verified on 9.37.54. This port does not claim a fresh standalone PR build;
+the dependency mismatch recorded above remains a limitation of that environment.
+
+The author reports the device checks passed with one deferred exception: rapid
+skips can leave participant artwork fully black until changing tracks and returning.
+That issue is still open. See [review fixes and retest details](pr3014-review-fixes.md).
