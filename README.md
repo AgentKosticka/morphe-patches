@@ -1,3 +1,6 @@
+> [!IMPORTANT]
+> **Archived:** Jam queue sharing was successfully merged upstream into [`MorpheApp/morphe-patches` via PR #3014](https://github.com/MorpheApp/morphe-patches/pull/3014). This fork is retained only for historical reference; further development continues upstream.
+
 <div align="center"> 
 <picture>
     <source
